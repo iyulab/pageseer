@@ -53,7 +53,29 @@ HWP → rhwp (HWP→SVG→PDF) ─────────┤      │
 - **PDFium** shared library — 플랫폼별 prebuilt 바이너리 제공 예정 (v0.1 동적 로딩)
 - **한글 폰트** (HWP 처리 시) — 맑은 고딕, 바탕 등 시스템 폰트 권장
 
-## 사용법 (예상 CLI — 설계 단계)
+## 빠른 시작 (S1: PDF 전용 — 구현 진행 중)
+
+S1 슬라이스는 PDF 입력만 지원한다. Office/HWP는 후속 슬라이스(S3·S4) 진행 중.
+
+**사전 준비:**
+
+1. PDFium shared library 다운로드: <https://github.com/bblanchon/pdfium-binaries/releases/tag/chromium/7802>
+   - 플랫폼 파일을 `<repo>/pdfium/`에 배치 (Windows: `pdfium.dll`, Linux: `libpdfium.so`, macOS: `libpdfium.dylib`)
+   - 또는 시스템 라이브러리 검색 경로에 배치
+2. Rust 1.75+ (`rustup show` 확인)
+
+**실행:**
+
+```sh
+cargo build --release
+./target/release/pageseer input.pdf -o ./out --dpi 150
+```
+
+**산출물:** `./out/<stem>/page-001.png`, `page-002.png`, ...
+
+**S1 옵션:** `-o/--output`(출력 디렉터리), `-f/--format png`(현재 png만), `--dpi N`(기본 150).
+
+## 사용법 (목표 CLI — 후속 슬라이스에서 활성)
 
 ```sh
 # 단일 PDF → ./out/report/page-001.png ...
