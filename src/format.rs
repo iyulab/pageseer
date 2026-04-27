@@ -7,9 +7,15 @@ use std::path::Path;
 pub enum DetectedFormat {
     /// `PDF`.
     Pdf,
-    /// 그 외 (S1에서는 `UnsupportedFormat` 반환).
+    /// `Office` (`DOCX`/`DOC`/`XLSX`/`XLS`/`PPTX`/`PPT`/`ODT`/`ODS`/`ODP`/`RTF`).
+    Office,
+    /// 그 외 (현재 `UnsupportedFormat` 반환).
     Other,
 }
+
+const OFFICE_EXTS: &[&str] = &[
+    "docx", "doc", "xlsx", "xls", "pptx", "ppt", "odt", "ods", "odp", "rtf",
+];
 
 /// 경로의 확장자만 보고 포맷을 분류한다.
 #[must_use]
@@ -20,6 +26,7 @@ pub fn detect_from_path(path: &Path) -> DetectedFormat {
         .map(str::to_ascii_lowercase);
     match ext.as_deref() {
         Some("pdf") => DetectedFormat::Pdf,
+        Some(e) if OFFICE_EXTS.contains(&e) => DetectedFormat::Office,
         _ => DetectedFormat::Other,
     }
 }
@@ -44,9 +51,19 @@ mod tests {
     #[test]
     fn unknown_extension_is_other() {
         assert_eq!(
-            detect_from_path(&PathBuf::from("a.docx")),
+            detect_from_path(&PathBuf::from("a.xyz")),
             DetectedFormat::Other
         );
         assert_eq!(detect_from_path(&PathBuf::from("a")), DetectedFormat::Other);
+    }
+
+    #[test]
+    fn office_extensions_detected() {
+        for ext in &[
+            "docx", "doc", "xlsx", "xls", "pptx", "ppt", "odt", "ods", "odp", "rtf", "DOCX",
+        ] {
+            let p = PathBuf::from(format!("a.{ext}"));
+            assert_eq!(detect_from_path(&p), DetectedFormat::Office, "ext={ext}");
+        }
     }
 }

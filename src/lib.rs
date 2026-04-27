@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 pub mod error;
 pub mod errors_json;
 pub mod format;
+pub mod gotenberg;
 pub mod options;
 pub mod output;
 pub mod raster;
@@ -57,6 +58,7 @@ pub fn extract(input: SourceInput, options: Options) -> Result<ExtractReport, Pa
 
     match format::detect_from_path(&path) {
         format::DetectedFormat::Pdf => extract_pdf(&path, &options),
+        format::DetectedFormat::Office => extract_office(&path, &options),
         format::DetectedFormat::Other => Err(PageseerError::UnsupportedFormat {
             extension: path
                 .extension()
@@ -68,22 +70,66 @@ pub fn extract(input: SourceInput, options: Options) -> Result<ExtractReport, Pa
     }
 }
 
-fn extract_pdf(path: &Path, options: &Options) -> Result<ExtractReport, PageseerError> {
-    use image::ImageFormat as ImgFmt;
+fn extract_office(path: &Path, options: &Options) -> Result<ExtractReport, PageseerError> {
+    let base = gotenberg::resolve_base_url(options.gotenberg_url.as_deref());
+    let client = gotenberg::GotenbergClient::new(base, options.gotenberg_timeout)?;
+    let pdf_bytes = client.convert_office(path)?;
 
-    let backend = raster::pdfium::PdfiumBackend::new()?;
-    let page_results = backend.rasterize_path_pages(path, options.dpi)?;
+    let original_stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("document")
+        .to_owned();
+    let tmp_pdf = std::env::temp_dir().join(format!(
+        "pageseer-gotenberg-{}-{original_stem}.pdf",
+        std::process::id()
+    ));
+    std::fs::write(&tmp_pdf, &pdf_bytes)?;
+
+    let mut result = extract_pdf_with_stem(&tmp_pdf, &original_stem, options);
+    let _ = std::fs::remove_file(&tmp_pdf);
+
+    // tmp_pdf 경로를 원본 path로 rewrite (사용자에게 노출되는 path는 원본).
+    rewrite_source_paths(&mut result, path);
+    result
+}
+
+fn rewrite_source_paths(result: &mut Result<ExtractReport, PageseerError>, original: &Path) {
+    let (Ok(report) | Err(PageseerError::Partial(report))) = result else {
+        return;
+    };
+    for art in &mut report.succeeded {
+        art.source_path = Some(original.to_path_buf());
+    }
+    for f in &mut report.failed {
+        f.source_path = Some(original.to_path_buf());
+    }
+}
+
+fn extract_pdf(path: &Path, options: &Options) -> Result<ExtractReport, PageseerError> {
     let stem = path
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("document")
         .to_owned();
+    extract_pdf_with_stem(path, &stem, options)
+}
+
+fn extract_pdf_with_stem(
+    path: &Path,
+    stem: &str,
+    options: &Options,
+) -> Result<ExtractReport, PageseerError> {
+    use image::ImageFormat as ImgFmt;
+
+    let backend = raster::pdfium::PdfiumBackend::new()?;
+    let page_results = backend.rasterize_path_pages(path, options.dpi)?;
     let page_count = page_results.len();
 
     let target_dir = if options.flat {
         options.output_dir.clone()
     } else {
-        options.output_dir.join(&stem)
+        options.output_dir.join(stem)
     };
     std::fs::create_dir_all(&target_dir)?;
 
@@ -113,7 +159,7 @@ fn extract_pdf(path: &Path, options: &Options) -> Result<ExtractReport, Pageseer
         };
         let out = output::page_output_path(
             &options.output_dir,
-            &stem,
+            stem,
             idx_u32,
             page_count,
             options.format,
