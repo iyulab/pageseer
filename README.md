@@ -59,7 +59,7 @@ S1 슬라이스는 PDF 입력만 지원한다. Office/HWP는 후속 슬라이스
 
 **사전 준비:**
 
-1. PDFium shared library 다운로드: <https://github.com/bblanchon/pdfium-binaries/releases/tag/chromium/7802>
+1. PDFium shared library 다운로드: <https://github.com/bblanchon/pdfium-binaries/releases/tag/chromium/7763> (CI 핀 버전)
    - 플랫폼 파일을 `<repo>/pdfium/`에 배치 (Windows: `pdfium.dll`, Linux: `libpdfium.so`, macOS: `libpdfium.dylib`)
    - 또는 시스템 라이브러리 검색 경로에 배치
 2. Rust 1.75+ (`rustup show` 확인)
@@ -145,6 +145,21 @@ cargo build --release
 # 실행
 ./target/release/pageseer report.pdf
 ```
+
+## 통합 테스트 실행
+
+통합 테스트는 PDFium shared library를 요구하므로 `#[ignore]`로 표시되어 default `cargo test`에서 제외된다 (단위 테스트만 실행). 통합 테스트까지 실행하려면:
+
+1. 위 "사전 준비" §1 절차로 `<repo>/pdfium/` 하위에 lib 파일을 배치
+2. 다음 명령 실행:
+
+```sh
+cargo test -- --include-ignored
+```
+
+CI는 매 push/PR마다 3-플랫폼(Linux/Windows/macOS) 매트릭스에서 자동으로 PDFium을 다운로드해 `--include-ignored` 모드로 통합 테스트를 실행한다. PDFium 버전 핀은 `.github/workflows/ci.yml`의 `PDFIUM_RELEASE_TAG`에서 관리.
+
+Office 통합 테스트(`integration_office`)는 추가로 `PAGESEER_TEST_GOTENBERG_URL` 환경 변수와 `tests/fixtures/sample.docx`를 요구한다 (둘 중 하나라도 없으면 명시적 skip 메시지 출력).
 
 ## 기여
 

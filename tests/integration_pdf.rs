@@ -1,7 +1,8 @@
 //! `PDF` 엔드투엔드 — 다페이지 fixture → 페이지별 `PNG` 산출.
 //!
 //! Fixture(`tests/fixtures/sample.pdf`)는 부재 시 `printpdf` dev-dep으로 자동 생성.
-//! `PDFium` 라이브러리(`./pdfium/` 또는 시스템) 부재 시 explicit skip.
+//! `PDFium` 라이브러리(`./pdfium/` 또는 시스템) 부재 시 panic — `#[ignore]`로 default
+//! `cargo test`에서 제외되며, `cargo test -- --include-ignored`로 명시 실행한다.
 
 use std::path::{Path, PathBuf};
 
@@ -11,6 +12,7 @@ use printpdf::{
 };
 
 #[test]
+#[ignore = "requires pdfium library at ./pdfium/ or system; run with --include-ignored"]
 fn three_page_pdf_produces_three_pngs() {
     let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sample.pdf");
     if !fixture.exists() {
@@ -25,18 +27,8 @@ fn three_page_pdf_produces_three_pngs() {
         output_dir: tmp.clone(),
         ..Options::default()
     };
-    let report = match extract(SourceInput::Path(fixture.clone()), opts) {
-        Ok(r) => r,
-        Err(e) => {
-            // pdfium 라이브러리 미배치 시 명시적 skip.
-            let msg = format!("{e}");
-            if msg.contains("library load failed") {
-                eprintln!("SKIP: pdfium library not available ({msg})");
-                return;
-            }
-            panic!("extract failed: {e}");
-        }
-    };
+    let report = extract(SourceInput::Path(fixture.clone()), opts)
+        .expect("extract failed; ensure pdfium library is installed at ./pdfium/");
 
     assert_eq!(report.failed_count(), 0);
     assert_eq!(

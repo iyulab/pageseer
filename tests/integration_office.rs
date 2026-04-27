@@ -1,16 +1,18 @@
-//! Office (`Gotenberg`) 통합 테스트 — `PAGESEER_TEST_GOTENBERG_URL` 환경 변수 + fixture가
-//! 모두 있어야 PASS. 어느 하나라도 없으면 explicit skip.
+//! Office (`Gotenberg`) 통합 테스트 — `#[ignore]`로 default `cargo test`에서 제외된다.
 //!
 //! 활성화:
 //! 1. `docker run --rm -p 3000:3000 gotenberg/gotenberg:8`
-//! 2. `tests/fixtures/sample.docx` 준비 (사용자 책임)
-//! 3. `PAGESEER_TEST_GOTENBERG_URL=http://localhost:3000 cargo test --test integration_office`
+//! 2. `tests/fixtures/sample.docx` 준비 (사용자 책임 — Pending #2)
+//! 3. `PAGESEER_TEST_GOTENBERG_URL=http://localhost:3000 cargo test --test integration_office -- --include-ignored`
+//!
+//! pdfium 라이브러리 부재 시 panic. env/fixture 부재 시 explicit skip (별도 opt-in gate).
 
 use std::path::PathBuf;
 
 use pageseer::{extract, ImageFormat, Options, SourceInput};
 
 #[test]
+#[ignore = "requires Gotenberg server + pdfium; run with --include-ignored"]
 fn docx_via_gotenberg_produces_pngs() {
     let url = match std::env::var("PAGESEER_TEST_GOTENBERG_URL") {
         Ok(u) if !u.is_empty() => u,
@@ -33,17 +35,8 @@ fn docx_via_gotenberg_produces_pngs() {
         gotenberg_url: Some(url),
         ..Options::default()
     };
-    let report = match extract(SourceInput::Path(fixture.clone()), opts) {
-        Ok(r) => r,
-        Err(e) => {
-            let msg = format!("{e}");
-            if msg.contains("library load failed") {
-                eprintln!("SKIP: pdfium library not available ({msg})");
-                return;
-            }
-            panic!("extract failed: {e}");
-        }
-    };
+    let report = extract(SourceInput::Path(fixture.clone()), opts)
+        .expect("extract failed; ensure pdfium library is installed at ./pdfium/");
     assert_eq!(report.failed_count(), 0);
     assert!(
         report.succeeded_count() >= 1,
