@@ -14,6 +14,7 @@ pub mod error;
 pub mod errors_json;
 pub mod format;
 pub mod gotenberg;
+pub mod hwp;
 pub mod options;
 pub mod output;
 pub mod raster;
@@ -51,7 +52,7 @@ pub fn extract(input: SourceInput, options: Options) -> Result<ExtractReport, Pa
         SourceInput::Path(p) => p,
         SourceInput::Bytes { .. } => {
             return Err(PageseerError::Config(
-                "SourceInput::Bytes not supported in S1 (PDF path input only)".to_owned(),
+                "SourceInput::Bytes not supported in v0.1 (path input only)".to_owned(),
             ));
         }
     };
@@ -59,6 +60,7 @@ pub fn extract(input: SourceInput, options: Options) -> Result<ExtractReport, Pa
     match format::detect_from_path(&path) {
         format::DetectedFormat::Pdf => extract_pdf(&path, &options),
         format::DetectedFormat::Office => extract_office(&path, &options),
+        format::DetectedFormat::Hwp => extract_hwp(&path, &options),
         format::DetectedFormat::Other => Err(PageseerError::UnsupportedFormat {
             extension: path
                 .extension()
@@ -68,6 +70,27 @@ pub fn extract(input: SourceInput, options: Options) -> Result<ExtractReport, Pa
             path: Some(path),
         }),
     }
+}
+
+fn extract_hwp(path: &Path, options: &Options) -> Result<ExtractReport, PageseerError> {
+    let pdf_bytes = hwp::convert_to_pdf_bytes(path)?;
+
+    let original_stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("document")
+        .to_owned();
+    let tmp_pdf = std::env::temp_dir().join(format!(
+        "pageseer-hwp-{}-{original_stem}.pdf",
+        std::process::id()
+    ));
+    std::fs::write(&tmp_pdf, &pdf_bytes)?;
+
+    let mut result = extract_pdf_with_stem(&tmp_pdf, &original_stem, options);
+    let _ = std::fs::remove_file(&tmp_pdf);
+
+    rewrite_source_paths(&mut result, path);
+    result
 }
 
 fn extract_office(path: &Path, options: &Options) -> Result<ExtractReport, PageseerError> {
@@ -106,6 +129,23 @@ fn rewrite_source_paths(result: &mut Result<ExtractReport, PageseerError>, origi
     }
 }
 
+fn save_image(
+    img: &image::DynamicImage,
+    path: &Path,
+    format: ImageFormat,
+) -> image::ImageResult<()> {
+    match format {
+        ImageFormat::Png => img.save_with_format(path, image::ImageFormat::Png),
+        ImageFormat::Jpeg { quality } => {
+            let file = std::fs::File::create(path)?;
+            let mut writer = std::io::BufWriter::new(file);
+            let mut encoder =
+                image::codecs::jpeg::JpegEncoder::new_with_quality(&mut writer, quality);
+            encoder.encode_image(img)
+        }
+    }
+}
+
 fn extract_pdf(path: &Path, options: &Options) -> Result<ExtractReport, PageseerError> {
     let stem = path
         .file_stem()
@@ -120,8 +160,6 @@ fn extract_pdf_with_stem(
     stem: &str,
     options: &Options,
 ) -> Result<ExtractReport, PageseerError> {
-    use image::ImageFormat as ImgFmt;
-
     let backend = raster::pdfium::PdfiumBackend::new()?;
     let page_results = backend.rasterize_path_pages(path, options.dpi)?;
     let page_count = page_results.len();
@@ -132,11 +170,6 @@ fn extract_pdf_with_stem(
         options.output_dir.join(stem)
     };
     std::fs::create_dir_all(&target_dir)?;
-
-    let img_format = match options.format {
-        ImageFormat::Png => ImgFmt::Png,
-        ImageFormat::Jpeg { .. } => ImgFmt::Jpeg,
-    };
 
     let mut report = ExtractReport::new();
     for (idx, page_result) in page_results.into_iter().enumerate() {
@@ -165,12 +198,14 @@ fn extract_pdf_with_stem(
             options.format,
             options.flat,
         );
+        let scaled = raster::apply_max_edge(img, options.max_edge);
         let to_save: image::DynamicImage = match options.format {
-            ImageFormat::Jpeg { .. } => img.into_rgb8().into(),
-            ImageFormat::Png => img,
+            ImageFormat::Jpeg { .. } => scaled.into_rgb8().into(),
+            ImageFormat::Png => scaled,
         };
         let (w, h) = (to_save.width(), to_save.height());
-        match to_save.save_with_format(&out, img_format) {
+        let save_result = save_image(&to_save, &out, options.format);
+        match save_result {
             Ok(()) => {
                 report.succeeded.push(PageArtifact {
                     source_path: Some(path.to_path_buf()),
@@ -229,5 +264,67 @@ mod tests {
             Options::default(),
         );
         assert!(matches!(result, Err(PageseerError::Config(_))));
+    }
+
+    #[test]
+    fn save_image_jpeg_writes_valid_jfif_magic() {
+        use image::{DynamicImage, RgbImage};
+        let img = DynamicImage::ImageRgb8(RgbImage::from_pixel(2, 2, image::Rgb([200, 100, 50])));
+        let tmp = std::env::temp_dir().join(format!(
+            "pageseer-jpeg-test-{}-{}.jpg",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        save_image(&img, &tmp, ImageFormat::Jpeg { quality: 85 }).expect("save jpeg");
+        let bytes = std::fs::read(&tmp).expect("read jpeg");
+        let _ = std::fs::remove_file(&tmp);
+        assert!(bytes.len() >= 3, "jpeg too small");
+        assert_eq!(&bytes[..3], &[0xFF, 0xD8, 0xFF], "missing JPEG SOI marker");
+    }
+
+    #[test]
+    fn save_image_jpeg_quality_affects_file_size() {
+        use image::{DynamicImage, RgbImage};
+        let img = DynamicImage::ImageRgb8(RgbImage::from_fn(64, 64, |x, y| {
+            let v = u8::try_from((x * 3 + y * 5) % 256).unwrap_or(0);
+            image::Rgb([v, v.wrapping_mul(3), v.wrapping_mul(7)])
+        }));
+        let dir = std::env::temp_dir().join(format!(
+            "pageseer-jpeg-q-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p_low = dir.join("q10.jpg");
+        let p_high = dir.join("q95.jpg");
+        save_image(&img, &p_low, ImageFormat::Jpeg { quality: 10 }).unwrap();
+        save_image(&img, &p_high, ImageFormat::Jpeg { quality: 95 }).unwrap();
+        let sz_low = std::fs::metadata(&p_low).unwrap().len();
+        let sz_high = std::fs::metadata(&p_high).unwrap().len();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(
+            sz_high > sz_low,
+            "expected q95 > q10 in size; got high={sz_high} low={sz_low}"
+        );
+    }
+
+    #[test]
+    fn extract_hwp_path_nonexistent_returns_rhwp_read_error() {
+        let result = extract(
+            SourceInput::Path(PathBuf::from("nonexistent.hwp")),
+            Options::default(),
+        );
+        match result {
+            Err(PageseerError::Rhwp(msg)) => {
+                assert!(msg.contains("read input"), "unexpected message: {msg}");
+            }
+            other => panic!("expected Rhwp read-error, got {other:?}"),
+        }
     }
 }

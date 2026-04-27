@@ -68,4 +68,12 @@ mod tests {
         let msg = format!("{err}");
         assert!(msg.contains("xyz"), "message: {msg}");
     }
+
+    #[test]
+    fn rhwp_displays_underlying_message() {
+        let err = PageseerError::Rhwp("parse hwp: bad magic".to_owned());
+        let msg = format!("{err}");
+        assert!(msg.contains("rhwp"), "message: {msg}");
+        assert!(msg.contains("bad magic"), "message: {msg}");
+    }
 }

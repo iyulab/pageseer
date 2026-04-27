@@ -1,170 +1,139 @@
 # pageseer
 
-> 문서를 페이지 이미지로 — VLM 파이프라인을 위한 문서 래스터라이저
+Rasterize documents into per-page images.
 
-**상태:** v0.1 설계 단계 (구현 미착수). 본 README는 타겟 사양을 기술한다.
+`pageseer` is a Rust library and CLI that converts PDF, Office, and HWP/HWPX files into per-page PNG or JPEG images. It is intended as a preprocessing step for downstream pipelines that operate on page images (OCR, vision-language models, search indexing).
 
-`pageseer`는 PDF·Office(DOCX/XLSX/PPTX/…)·HWP 문서를 입력받아 **페이지 단위 이미지**(PNG/JPEG)로 변환해 파일 시스템에 저장하는 Rust CLI 및 라이브러리이다. 주 용도는 **VLM(비전 언어 모델) 입력 파이프라인의 전처리 단계**다.
+Status: v0.1.0. See [CHANGELOG.md](./CHANGELOG.md).
 
-## 이 프로젝트가 해결하는 문제
+## Scope
 
-VLM 기반 문서 이해·OCR 파이프라인은 보통 "문서 → 페이지별 이미지"라는 공통 전처리 단계를 요구한다. 그러나 입력 포맷이 다양(PDF, Office, HWP)할수록 이 단계는 파편화된다 — 포맷마다 렌더링 라이브러리가 다르고, 배포·의존성 관리가 복잡해진다.
+In scope (v0.1):
 
-`pageseer`는 이 단계를 **하나의 파이프라인**으로 통일한다:
+- Inputs: PDF, DOCX/DOC, XLSX/XLS, PPTX/PPT, ODT/ODS/ODP, RTF, HWP/HWPX
+- Outputs: PNG or JPEG, one file per page
+- Single-input processing via CLI or library
+- Continue-on-error mode with a structured `errors.json` per input
+- Platforms: Linux x86_64, Windows x86_64, macOS Apple Silicon
+
+Out of scope (v0.1):
+
+- Multi-input batching, page-level parallelism, rayon
+- Embedded image extraction, page range selection
+- VLM/OCR adapters, streaming API, JSON logging
+- Authenticated Gotenberg, static pdfium linking
+- crates.io publication (blocked on the rhwp dependency)
+
+See [ROADMAP.md](./ROADMAP.md) for later versions.
+
+## Pipeline
 
 ```
-PDF ─────────────────────────────────────┐
+PDF  ────────────────────────────────────┐
 Office → Gotenberg (LibreOffice) ─┐      │
-HWP → rhwp (HWP→SVG→PDF) ─────────┤      │
+HWP    → rhwp (HWP → SVG → PDF) ──┤      │
                                   ▼      ▼
-                                   PDF ──▶ pdfium-render ──▶ PNG/JPEG 페이지
+                                  PDF ──▶ pdfium-render ──▶ PNG/JPEG
 ```
 
-모든 입력을 PDF로 정규화한 뒤 단일 라스터라이저(`pdfium-render`)로 흘린다. 외부 서비스 의존은 **Office 포맷 한정 Gotenberg 원격 HTTP 서버 1개**뿐이다.
+All inputs are normalized to PDF and rasterized with `pdfium-render`. The only external service dependency is Gotenberg, and only for Office formats.
 
-## 주요 기능 (v0.1)
+## Requirements
 
-- **입력 포맷:** PDF, DOCX/DOC, XLSX/XLS, PPTX/PPT, HWP/HWPX
-- **출력:** 페이지별 PNG 또는 JPEG
-- **해상도 제어:** DPI 기반 + 긴 변 최대 픽셀 제한 옵션
-- **배치 처리:** 여러 입력 파일 동시 처리, 부분 실패 계속(continue-on-error) 기본
-- **진단:** 실패 페이지 구조화 보고 (`errors.json`)
-- **플랫폼:** Linux x86_64 / Windows x86_64 / macOS Apple Silicon
-- **CLI + Rust 라이브러리** 양쪽 제공
+- Rust 1.75 or newer
+- A `pdfium` shared library (loaded dynamically). Download a build matching your platform from [bblanchon/pdfium-binaries](https://github.com/bblanchon/pdfium-binaries) (CI pins `chromium/7763`) and place it at `<repo>/pdfium/` or in the system library search path:
+  - Linux: `libpdfium.so`
+  - Windows: `pdfium.dll`
+  - macOS: `libpdfium.dylib`
+- Gotenberg, only when processing Office formats: `docker run --rm -p 3000:3000 gotenberg/gotenberg:8`
+- CJK fonts on the host when processing HWP/HWPX (Noto Sans CJK on Linux; Microsoft and Apple platforms ship suitable fonts by default)
 
-## 비전 (후속 버전)
+## Install
 
-| 버전 | 범위 |
-|------|------|
-| v0.1 | Rust core + CLI |
-| v0.2 | C ABI + C#/Python 바인딩 |
-| v0.3 | VLM 어댑터 (OpenAI·Anthropic·로컬 llama.cpp) — 페이지 이미지 → OCR/설명 |
-| v0.4 | pdfium 정적 링크, 단일 바이너리 배포 |
-| v0.5+ | 스트리밍 API, JSON 로그, Gotenberg 인증 |
+Pre-built binaries are attached to each [GitHub release](https://github.com/iyulab/pageseer/releases). Each archive bundles the matching `pdfium` shared library alongside the `pageseer` executable.
 
-자세한 내용은 [ROADMAP.md](./ROADMAP.md) 참조.
-
-## 사전 요구사항
-
-- **Rust** 1.75+
-- **Gotenberg** 서버 (Office 포맷을 처리할 때만 필요)
-  - Docker: `docker run --rm -p 3000:3000 gotenberg/gotenberg:8`
-  - PDF만 처리한다면 Gotenberg 불필요
-- **PDFium** shared library — 플랫폼별 prebuilt 바이너리 제공 예정 (v0.1 동적 로딩)
-- **한글 폰트** (HWP 처리 시) — 맑은 고딕, 바탕 등 시스템 폰트 권장
-
-## 빠른 시작 (S1: PDF 전용 — 구현 진행 중)
-
-S1 슬라이스는 PDF 입력만 지원한다. Office/HWP는 후속 슬라이스(S3·S4) 진행 중.
-
-**사전 준비:**
-
-1. PDFium shared library 다운로드: <https://github.com/bblanchon/pdfium-binaries/releases/tag/chromium/7763> (CI 핀 버전)
-   - 플랫폼 파일을 `<repo>/pdfium/`에 배치 (Windows: `pdfium.dll`, Linux: `libpdfium.so`, macOS: `libpdfium.dylib`)
-   - 또는 시스템 라이브러리 검색 경로에 배치
-2. Rust 1.75+ (`rustup show` 확인)
-
-**실행:**
+Build from source:
 
 ```sh
 cargo build --release
-./target/release/pageseer input.pdf -o ./out --dpi 150
+./target/release/pageseer --help
 ```
 
-**산출물:** `./out/<stem>/page-001.png`, `page-002.png`, ...
-
-**S1 옵션:** `-o/--output`(출력 디렉터리), `-f/--format png`(현재 png만), `--dpi N`(기본 150).
-
-**S2 옵션:** `--strict` (첫 실패 시 즉시 중단; 기본은 continue-on-error).
-
-**종료 코드:** 0(성공) / 1(전체 실패) / 2(부분 실패; `errors.json` 참조) / 64(인자·포맷 오류).
-
-**실패 보고:** continue-on-error 모드에서 페이지 1건이라도 실패하면 `<output_dir>/<stem>/errors.json` 생성 (1-based 페이지 번호, 단계 식별자 `source-read|convert|rasterize|write`).
-
-### Office 입력 (S3)
-
-DOCX/XLSX/PPTX/ODT 등은 Gotenberg를 거쳐 PDF로 변환된다.
-
-1. Gotenberg 기동: `docker run --rm -p 3000:3000 gotenberg/gotenberg:8`
-2. 실행: `pageseer report.docx -o ./out` (기본 `http://localhost:3000` 사용)
-3. 다른 호스트: `--gotenberg-url http://other:3000` 또는 `GOTENBERG_URL` env
-4. 타임아웃 조정: `--gotenberg-timeout 300`
-
-지원 확장자: `docx`, `doc`, `xlsx`, `xls`, `pptx`, `ppt`, `odt`, `ods`, `odp`, `rtf`.
-
-## 사용법 (목표 CLI — 후속 슬라이스에서 활성)
+## CLI
 
 ```sh
-# 단일 PDF → ./out/report/page-001.png ...
+pageseer <INPUT> [OPTIONS]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `-o, --output <DIR>` | `./out` | Output directory |
+| `-f, --format <FMT>` | `png` | `png` or `jpeg` |
+| `--dpi <N>` | `150` | Rasterization DPI |
+| `-q, --quality <1-100>` | `85` | JPEG quality (ignored for PNG) |
+| `--max-edge <N>` | unset | Downscale so the long edge does not exceed N pixels (Lanczos3) |
+| `--flat` | off | Flat layout: `<out>/<stem>-NNN.<ext>` instead of `<out>/<stem>/page-NNN.<ext>` |
+| `-j, --concurrency <N>` | `1` | Reserved for v0.2 multi-input batching; no effect in v0.1 |
+| `--strict` | off | Stop on first failure (default is continue-on-error) |
+| `--gotenberg-url <URL>` | `http://localhost:3000` | Gotenberg base URL (also `GOTENBERG_URL`) |
+| `--gotenberg-timeout <SEC>` | `120` | Gotenberg request timeout |
+
+Examples:
+
+```sh
 pageseer report.pdf --dpi 200
-
-# 여러 입력 + JPEG 출력
-pageseer *.pdf *.docx --format jpeg --quality 85 -o ./images
-
-# VLM 입력용: 긴 변 2048px 제한
-pageseer deck.pptx --max-edge 2048 --format png
-
-# 평면 배치 (glob 친화)
-pageseer report.pdf --flat -o ./out
-# → ./out/report-001.png, report-002.png, ...
-
-# 엄격 모드 (첫 실패 시 즉시 중단)
-pageseer batch/*.pdf --strict
-
-# 원격 Gotenberg 지정
+pageseer report.docx --format jpeg --quality 80 -o ./out
+pageseer deck.pptx --max-edge 2048
+pageseer slides.pdf --flat -o ./out      # ./out/slides-001.png, ...
 pageseer doc.docx --gotenberg-url http://gotenberg.internal:3000
 ```
 
-환경 변수: `GOTENBERG_URL`, `GOTENBERG_TIMEOUT`, `PAGESEER_CONCURRENCY`, `PAGESEER_OUT`.
+Exit codes: `0` success, `1` total failure, `2` partial failure (see `errors.json`), `64` invalid arguments or unsupported format.
 
-자세한 플래그는 설계 명세(`claudedocs/specs/`)를 참조 (로컬 전용 문서).
+When at least one page fails in continue-on-error mode, `<output>/<stem>/errors.json` is written with 1-based page numbers and stage identifiers (`source-read`, `convert`, `rasterize`, `write`).
 
-## 아키텍처 주의사항
+## Library
 
-- `pdfium-render`의 `thread_safe` feature는 기본 활성화되어 **모든 PDFium 호출을 내부 전역 Mutex로 직렬화**한다. 즉 `--concurrency N` 설정 시 진짜 병렬 이득은 **Gotenberg HTTP 대기 및 rhwp CPU 변환 단계**에서만 발생한다. 순수 PDF 배치에서는 `-j 1`이 합리적이다.
-- HWP 경로는 [edwardkim/rhwp](https://github.com/edwardkim/rhwp)를 git dependency로 사용한다. rhwp가 crates.io 배포되기 전까지 pageseer도 crates.io 배포는 하지 않는다 — GitHub release 바이너리만 제공.
+```rust
+use pageseer::{extract, ImageFormat, Options, SourceInput};
 
-## 기술 스택
+let report = extract(
+    SourceInput::Path("report.pdf".into()),
+    Options { format: ImageFormat::Png, dpi: 200, ..Options::default() },
+)?;
 
-| 구성 요소 | 선택 | 이유 |
-|---|---|---|
-| 언어 | Rust | 성능 · 메모리 안전 · 향후 C ABI 노출 용이 |
-| PDF 라스터 | [pdfium-render](https://github.com/ajrcarey/pdfium-render) | Google의 PDFium 엔진, 성숙한 Rust 바인딩 |
-| Office → PDF | [Gotenberg](https://gotenberg.dev) | LibreOffice 기반, 컨테이너 1개로 해결 |
-| HWP → PDF | [rhwp](https://github.com/edwardkim/rhwp) | Rust 네이티브 HWP 뷰어/변환기 |
-| 이미지 인코딩 | [image](https://crates.io/crates/image) | PNG/JPEG 표준 |
-| HTTP 클라이언트 | [reqwest](https://crates.io/crates/reqwest) (blocking) | 성숙한 rustls 지원 |
-| CLI 파서 | [clap](https://crates.io/crates/clap) v4 | derive 매크로 |
-
-## 빌드 & 실행 (구현 착수 후)
-
-```sh
-# 빌드
-cargo build --release
-
-# 실행
-./target/release/pageseer report.pdf
+println!("{} pages, {} failed", report.succeeded_count(), report.failed_count());
 ```
 
-## 통합 테스트 실행
+`extract` is synchronous and consumes the `SourceInput`. Failures are reported as `PageseerError`; partial failures are returned via `PageseerError::Partial(report)`.
 
-통합 테스트는 PDFium shared library를 요구하므로 `#[ignore]`로 표시되어 default `cargo test`에서 제외된다 (단위 테스트만 실행). 통합 테스트까지 실행하려면:
+HWP processing may panic inside `rhwp` on malformed input. Callers that need isolation should wrap the call in `std::panic::catch_unwind`.
 
-1. 위 "사전 준비" §1 절차로 `<repo>/pdfium/` 하위에 lib 파일을 배치
-2. 다음 명령 실행:
+## Notes
+
+- `pdfium-render` enables its `thread_safe` feature by default, which serializes all PDFium calls behind a global mutex. Document-level concurrency only helps for stages outside PDFium (Gotenberg HTTP, rhwp CPU work). Pure-PDF batches see no speedup from `-j > 1`.
+- The HWP path depends on [`rhwp`](https://github.com/edwardkim/rhwp) as a git dependency. `pageseer` will not be published to crates.io until `rhwp` is.
+
+## Testing
+
+Unit tests run by default:
+
+```sh
+cargo test
+```
+
+Integration tests are gated behind `#[ignore]` and require `pdfium`:
 
 ```sh
 cargo test -- --include-ignored
 ```
 
-CI는 매 push/PR마다 3-플랫폼(Linux/Windows/macOS) 매트릭스에서 자동으로 PDFium을 다운로드해 `--include-ignored` 모드로 통합 테스트를 실행한다. PDFium 버전 핀은 `.github/workflows/ci.yml`의 `PDFIUM_RELEASE_TAG`에서 관리.
+The Office integration test additionally requires a running Gotenberg server, exposed via `PAGESEER_TEST_GOTENBERG_URL`. The `sample.docx` fixture is generated at runtime via the `docx-rs` dev-dependency.
 
-Office 통합 테스트(`integration_office`)는 추가로 `PAGESEER_TEST_GOTENBERG_URL` 환경 변수와 `tests/fixtures/sample.docx`를 요구한다 (둘 중 하나라도 없으면 명시적 skip 메시지 출력).
+The HWP integration test requires `tests/fixtures/sample.hwp` to be supplied by the user. `rhwp` is a decoder, so the fixture cannot be generated automatically. CI does not run this test.
 
-## 기여
+CI builds against Linux, Windows, and macOS, downloading `pdfium` automatically. A separate Linux job runs the Office integration test against a Gotenberg service container.
 
-이 프로젝트는 설계 단계이다. 본격 기여 안내는 v0.1 구현 완료 후 추가 예정. 이슈·아이디어 환영.
-
-## 라이선스
+## License
 
 [MIT](./LICENSE)

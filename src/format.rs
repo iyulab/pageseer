@@ -9,6 +9,8 @@ pub enum DetectedFormat {
     Pdf,
     /// `Office` (`DOCX`/`DOC`/`XLSX`/`XLS`/`PPTX`/`PPT`/`ODT`/`ODS`/`ODP`/`RTF`).
     Office,
+    /// `HWP`/`HWPX` (한글 문서).
+    Hwp,
     /// 그 외 (현재 `UnsupportedFormat` 반환).
     Other,
 }
@@ -16,6 +18,8 @@ pub enum DetectedFormat {
 const OFFICE_EXTS: &[&str] = &[
     "docx", "doc", "xlsx", "xls", "pptx", "ppt", "odt", "ods", "odp", "rtf",
 ];
+
+const HWP_EXTS: &[&str] = &["hwp", "hwpx"];
 
 /// 경로의 확장자만 보고 포맷을 분류한다.
 #[must_use]
@@ -27,6 +31,7 @@ pub fn detect_from_path(path: &Path) -> DetectedFormat {
     match ext.as_deref() {
         Some("pdf") => DetectedFormat::Pdf,
         Some(e) if OFFICE_EXTS.contains(&e) => DetectedFormat::Office,
+        Some(e) if HWP_EXTS.contains(&e) => DetectedFormat::Hwp,
         _ => DetectedFormat::Other,
     }
 }
@@ -64,6 +69,14 @@ mod tests {
         ] {
             let p = PathBuf::from(format!("a.{ext}"));
             assert_eq!(detect_from_path(&p), DetectedFormat::Office, "ext={ext}");
+        }
+    }
+
+    #[test]
+    fn hwp_extensions_detected() {
+        for ext in &["hwp", "hwpx", "HWP", "HWPX"] {
+            let p = PathBuf::from(format!("a.{ext}"));
+            assert_eq!(detect_from_path(&p), DetectedFormat::Hwp, "ext={ext}");
         }
     }
 }

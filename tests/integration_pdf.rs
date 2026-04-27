@@ -11,6 +11,8 @@ use printpdf::{
     BuiltinFont, Mm, Op, PdfDocument, PdfFontHandle, PdfPage, PdfSaveOptions, Point, Pt, TextItem,
 };
 
+mod common;
+
 #[test]
 #[ignore = "requires pdfium library at ./pdfium/ or system; run with --include-ignored"]
 fn three_page_pdf_produces_three_pngs() {
@@ -20,7 +22,7 @@ fn three_page_pdf_produces_three_pngs() {
     }
     assert!(fixture.exists(), "fixture still missing after generate");
 
-    let tmp = tempfile_dir("three-page-pdf");
+    let tmp = common::tempfile_dir("three-page-pdf");
     let opts = Options {
         format: ImageFormat::Png,
         dpi: 100,
@@ -97,12 +99,4 @@ fn build_three_page_pdf() -> Vec<u8> {
         .collect();
     doc.with_pages(pages)
         .save(&PdfSaveOptions::default(), &mut Vec::new())
-}
-
-fn tempfile_dir(label: &str) -> PathBuf {
-    let mut d = std::env::temp_dir();
-    d.push(format!("pageseer-test-{}-{}", std::process::id(), label));
-    let _ = std::fs::remove_dir_all(&d);
-    std::fs::create_dir_all(&d).unwrap();
-    d
 }

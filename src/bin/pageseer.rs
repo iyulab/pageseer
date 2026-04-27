@@ -19,17 +19,33 @@ struct Cli {
     #[arg(short = 'o', long = "output", default_value = "./out")]
     output: PathBuf,
 
-    /// 출력 포맷 (S1: png 만 지원).
+    /// 출력 포맷 (`png` 또는 `jpeg`).
     #[arg(short = 'f', long = "format", default_value = "png")]
     format: String,
+
+    /// `JPEG` 품질 (1-100). format=png일 때 무시.
+    #[arg(short = 'q', long = "quality", default_value_t = 85, value_parser = clap::value_parser!(u8).range(1..=100))]
+    quality: u8,
 
     /// 라스터 `DPI`. 기본 150.
     #[arg(long = "dpi", default_value_t = 150)]
     dpi: u32,
 
+    /// 긴 변 최대 픽셀(라스터 후 다운스케일). 미지정 시 무제한.
+    #[arg(long = "max-edge")]
+    max_edge: Option<u32>,
+
     /// 첫 실패 시 즉시 중단. 기본은 continue-on-error.
     #[arg(long = "strict")]
     strict: bool,
+
+    /// 평면 배치 (`<out>/<stem>-NNN.<ext>`). 기본은 문서별 하위 디렉터리.
+    #[arg(long = "flat")]
+    flat: bool,
+
+    /// 문서 단위 병렬도. v0.1은 단일 입력만 지원하므로 효과 없음 (multi-input은 v0.2).
+    #[arg(short = 'j', long = "concurrency", default_value_t = 1)]
+    concurrency: usize,
 
     /// Gotenberg base `URL`. 미지정시 `GOTENBERG_URL` env, 그것도 없으면 `http://localhost:3000`.
     #[arg(long = "gotenberg-url")]
@@ -44,19 +60,24 @@ fn main() -> ExitCode {
     let cli = Cli::parse();
     let format = match cli.format.as_str() {
         "png" => ImageFormat::Png,
+        "jpeg" => ImageFormat::Jpeg {
+            quality: cli.quality,
+        },
         other => {
-            eprintln!("unsupported --format: {other} (S1: png only)");
+            eprintln!("unsupported --format: {other} (allowed: png, jpeg)");
             return ExitCode::from(64);
         }
     };
     let opts = Options {
         format,
         dpi: cli.dpi,
+        max_edge: cli.max_edge,
         output_dir: cli.output,
+        flat: cli.flat,
         strict: cli.strict,
         gotenberg_url: cli.gotenberg_url,
         gotenberg_timeout: Duration::from_secs(cli.gotenberg_timeout),
-        ..Options::default()
+        concurrency: cli.concurrency,
     };
     match extract(SourceInput::Path(cli.input), opts) {
         Ok(report) => {

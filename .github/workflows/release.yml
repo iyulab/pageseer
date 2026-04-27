@@ -1,0 +1,139 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+env:
+  CARGO_TERM_COLOR: always
+  PDFIUM_RELEASE_TAG: "7763"
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target_label: linux-x64
+            archive_ext: tar.gz
+            pdfium_lib: libpdfium.so
+            bin_name: pageseer
+          - os: windows-latest
+            target_label: windows-x64
+            archive_ext: tar.gz
+            pdfium_lib: pdfium.dll
+            bin_name: pageseer.exe
+          - os: macos-latest
+            target_label: macos-arm64
+            archive_ext: tar.gz
+            pdfium_lib: libpdfium.dylib
+            bin_name: pageseer
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Verify tag matches Cargo.toml version
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          cargo_version=$(grep -m1 '^version = ' Cargo.toml | sed -E 's/version = "(.*)"/\1/')
+          if [ "$tag" != "$cargo_version" ]; then
+            echo "tag '$tag' does not match Cargo.toml version '$cargo_version'" >&2
+            exit 1
+          fi
+          echo "tag/version match: $tag"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: ${{ runner.os }}-cargo-release-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-release-
+            ${{ runner.os }}-cargo-
+
+      - name: Setup pdfium
+        uses: ./.github/actions/setup-pdfium
+        with:
+          os: ${{ matrix.os }}
+          release-tag: ${{ env.PDFIUM_RELEASE_TAG }}
+
+      - name: cargo build (release, locked)
+        run: cargo build --release --locked
+
+      - name: Stage release artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          stage="pageseer-${{ matrix.target_label }}"
+          mkdir -p "$stage"
+          cp "target/release/${{ matrix.bin_name }}" "$stage/"
+          cp "pdfium/${{ matrix.pdfium_lib }}" "$stage/"
+          cp README.md ROADMAP.md LICENSE "$stage/"
+          tar -czf "${stage}.tar.gz" "$stage"
+          ls -la "${stage}.tar.gz"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pageseer-${{ matrix.target_label }}
+          path: pageseer-${{ matrix.target_label }}.tar.gz
+          retention-days: 1
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub Release
+    needs: [build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: List staged artifacts
+        run: ls -la dist/
+
+      - name: Extract release notes from CHANGELOG.md
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          # Extract "## [<version>] ..." section up to the next "## [" header.
+          awk -v v="$version" '
+            index($0, "## [" v "]") == 1 {flag=1; print; next}
+            flag && index($0, "## [") == 1 {flag=0}
+            flag {print}
+          ' CHANGELOG.md > release-body.md
+          if [ ! -s release-body.md ]; then
+            echo "CHANGELOG.md missing section for version '$version'" >&2
+            exit 1
+          fi
+          head -20 release-body.md
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.tar.gz
+          body_path: release-body.md
+          fail_on_unmatched_files: true
+
+      - name: Cleanup build artifacts
+        uses: geekyeggo/delete-artifact@v5
+        with:
+          name: pageseer-*
+          failOnError: false

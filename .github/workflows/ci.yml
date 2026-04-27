@@ -18,19 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-latest
-            pdfium_asset: pdfium-linux-x64.tgz
-            pdfium_lib_in_archive: lib/libpdfium.so
-            pdfium_lib_filename: libpdfium.so
-          - os: windows-latest
-            pdfium_asset: pdfium-win-x64.tgz
-            pdfium_lib_in_archive: bin/pdfium.dll
-            pdfium_lib_filename: pdfium.dll
-          - os: macos-latest
-            pdfium_asset: pdfium-mac-arm64.tgz
-            pdfium_lib_in_archive: lib/libpdfium.dylib
-            pdfium_lib_filename: libpdfium.dylib
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v5
 
@@ -46,29 +34,68 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: Download and extract pdfium
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p pdfium pdfium-extract
-          curl -fL -o pdfium.tgz \
-            "https://github.com/bblanchon/pdfium-binaries/releases/download/chromium/${PDFIUM_RELEASE_TAG}/${{ matrix.pdfium_asset }}"
-          tar -xzf pdfium.tgz -C pdfium-extract
-          cp "pdfium-extract/${{ matrix.pdfium_lib_in_archive }}" "pdfium/${{ matrix.pdfium_lib_filename }}"
-          rm -rf pdfium.tgz pdfium-extract
+      - name: Setup pdfium
+        uses: ./.github/actions/setup-pdfium
+        with:
+          os: ${{ matrix.os }}
+          release-tag: ${{ env.PDFIUM_RELEASE_TAG }}
 
       - name: cargo fmt
         run: cargo fmt --all -- --check
 
       - name: cargo clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --all-targets --all-features --locked -- -D warnings
 
-      - name: cargo test
-        run: cargo test --all-features --verbose -- --include-ignored
+      - name: cargo test (unit + exit-codes)
+        run: cargo test --lib --bins --test integration_exit_codes --all-features --locked --verbose
+
+      - name: cargo test (integration_pdf)
+        run: cargo test --test integration_pdf --all-features --locked --verbose -- --include-ignored
 
       - name: cargo build (release)
-        run: cargo build --release
+        run: cargo build --release --locked
+
+  office-test:
+    name: Test integration_office (Linux + Gotenberg)
+    runs-on: ubuntu-latest
+    services:
+      gotenberg:
+        image: gotenberg/gotenberg:8
+        ports:
+          - 3000:3000
+        options: >-
+          --health-cmd "curl -fsS http://localhost:3000/health || exit 1"
+          --health-interval 5s
+          --health-retries 10
+          --health-start-period 10s
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Setup pdfium
+        uses: ./.github/actions/setup-pdfium
+        with:
+          os: ubuntu-latest
+          release-tag: ${{ env.PDFIUM_RELEASE_TAG }}
+
+      - name: cargo test (integration_office)
+        env:
+          PAGESEER_TEST_GOTENBERG_URL: http://localhost:3000
+        run: cargo test --test integration_office --all-features --locked --verbose -- --include-ignored

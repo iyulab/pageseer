@@ -1,0 +1,51 @@
+name: setup-pdfium
+description: Download bblanchon/pdfium-binaries prebuilt and place into ./pdfium/ for the runner OS.
+
+inputs:
+  os:
+    description: Runner OS (ubuntu-latest | windows-latest | macos-latest)
+    required: true
+  release-tag:
+    description: pdfium-binaries release tag (e.g. "7763")
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve pdfium asset for OS
+      id: resolve
+      shell: bash
+      run: |
+        set -euo pipefail
+        case "${{ inputs.os }}" in
+          ubuntu-*)
+            echo "asset=pdfium-linux-x64.tgz" >> "$GITHUB_OUTPUT"
+            echo "lib_in=lib/libpdfium.so" >> "$GITHUB_OUTPUT"
+            echo "lib_out=libpdfium.so" >> "$GITHUB_OUTPUT"
+            ;;
+          windows-*)
+            echo "asset=pdfium-win-x64.tgz" >> "$GITHUB_OUTPUT"
+            echo "lib_in=bin/pdfium.dll" >> "$GITHUB_OUTPUT"
+            echo "lib_out=pdfium.dll" >> "$GITHUB_OUTPUT"
+            ;;
+          macos-*)
+            echo "asset=pdfium-mac-arm64.tgz" >> "$GITHUB_OUTPUT"
+            echo "lib_in=lib/libpdfium.dylib" >> "$GITHUB_OUTPUT"
+            echo "lib_out=libpdfium.dylib" >> "$GITHUB_OUTPUT"
+            ;;
+          *)
+            echo "unsupported os: ${{ inputs.os }}" >&2
+            exit 1
+            ;;
+        esac
+
+    - name: Download and extract pdfium
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p pdfium pdfium-extract
+        curl -fL -o pdfium.tgz \
+          "https://github.com/bblanchon/pdfium-binaries/releases/download/chromium/${{ inputs.release-tag }}/${{ steps.resolve.outputs.asset }}"
+        tar -xzf pdfium.tgz -C pdfium-extract
+        cp "pdfium-extract/${{ steps.resolve.outputs.lib_in }}" "pdfium/${{ steps.resolve.outputs.lib_out }}"
+        rm -rf pdfium.tgz pdfium-extract

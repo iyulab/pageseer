@@ -34,3 +34,26 @@ fn missing_required_input_exits_with_clap_error() {
     // pageseer 자체 분기에 들어가지도 않으므로 clap 동작을 그대로 검증.
     assert_eq!(status.code(), Some(2));
 }
+
+#[test]
+fn help_includes_s5_options() {
+    let output = Command::new(bin())
+        .arg("--help")
+        .output()
+        .expect("failed to run pageseer --help");
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for needle in [
+        "--quality",
+        "--max-edge",
+        "--flat",
+        "--concurrency",
+        "--strict",
+        "--gotenberg-url",
+    ] {
+        assert!(
+            stdout.contains(needle),
+            "--help missing flag {needle}; stdout:\n{stdout}"
+        );
+    }
+}
