@@ -275,8 +275,7 @@ mod tests {
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_nanos())
-                .unwrap_or(0)
+                .map_or(0, |d| d.as_nanos())
         ));
         save_image(&img, &tmp, ImageFormat::Jpeg { quality: 85 }).expect("save jpeg");
         let bytes = std::fs::read(&tmp).expect("read jpeg");
@@ -297,8 +296,7 @@ mod tests {
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_nanos())
-                .unwrap_or(0)
+                .map_or(0, |d| d.as_nanos())
         ));
         std::fs::create_dir_all(&dir).unwrap();
         let p_low = dir.join("q10.jpg");
