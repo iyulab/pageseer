@@ -26,6 +26,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "multipart", "rustls-tls"] }
 rhwp = { git = "https://github.com/edwardkim/rhwp", rev = "92c5b6b79d22f6c784b3b317551c66466b3b63a5" }
+rayon = "1"
 
 [dev-dependencies]
 printpdf = "0.9"

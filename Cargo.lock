@@ -1979,6 +1979,7 @@ dependencies = [
  "image",
  "pdfium-render",
  "printpdf",
+ "rayon",
  "reqwest",
  "rhwp",
  "serde",
