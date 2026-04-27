@@ -81,6 +81,17 @@ cargo build --release
 
 **실패 보고:** continue-on-error 모드에서 페이지 1건이라도 실패하면 `<output_dir>/<stem>/errors.json` 생성 (1-based 페이지 번호, 단계 식별자 `source-read|convert|rasterize|write`).
 
+### Office 입력 (S3)
+
+DOCX/XLSX/PPTX/ODT 등은 Gotenberg를 거쳐 PDF로 변환된다.
+
+1. Gotenberg 기동: `docker run --rm -p 3000:3000 gotenberg/gotenberg:8`
+2. 실행: `pageseer report.docx -o ./out` (기본 `http://localhost:3000` 사용)
+3. 다른 호스트: `--gotenberg-url http://other:3000` 또는 `GOTENBERG_URL` env
+4. 타임아웃 조정: `--gotenberg-timeout 300`
+
+지원 확장자: `docx`, `doc`, `xlsx`, `xls`, `pptx`, `ppt`, `odt`, `ods`, `odp`, `rtf`.
+
 ## 사용법 (목표 CLI — 후속 슬라이스에서 활성)
 
 ```sh

@@ -2,6 +2,7 @@
 
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::time::Duration;
 
 use clap::Parser;
 
@@ -29,6 +30,14 @@ struct Cli {
     /// 첫 실패 시 즉시 중단. 기본은 continue-on-error.
     #[arg(long = "strict")]
     strict: bool,
+
+    /// Gotenberg base `URL`. 미지정시 `GOTENBERG_URL` env, 그것도 없으면 `http://localhost:3000`.
+    #[arg(long = "gotenberg-url")]
+    gotenberg_url: Option<String>,
+
+    /// Gotenberg 요청 타임아웃(초). 기본 120.
+    #[arg(long = "gotenberg-timeout", default_value_t = 120)]
+    gotenberg_timeout: u64,
 }
 
 fn main() -> ExitCode {
@@ -45,6 +54,8 @@ fn main() -> ExitCode {
         dpi: cli.dpi,
         output_dir: cli.output,
         strict: cli.strict,
+        gotenberg_url: cli.gotenberg_url,
+        gotenberg_timeout: Duration::from_secs(cli.gotenberg_timeout),
         ..Options::default()
     };
     match extract(SourceInput::Path(cli.input), opts) {
