@@ -83,7 +83,7 @@ jobs:
           ls -la "${stage}.tar.gz"
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pageseer-${{ matrix.target_label }}
           path: pageseer-${{ matrix.target_label }}.tar.gz
@@ -100,7 +100,7 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Download all build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
@@ -126,14 +126,14 @@ jobs:
           head -20 release-body.md
 
       - name: Create release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: dist/*.tar.gz
           body_path: release-body.md
           fail_on_unmatched_files: true
 
       - name: Cleanup build artifacts
-        uses: geekyeggo/delete-artifact@v5
+        uses: geekyeggo/delete-artifact@v6
         with:
           name: pageseer-*
           failOnError: false
