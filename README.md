@@ -75,6 +75,12 @@ cargo build --release
 
 **S1 옵션:** `-o/--output`(출력 디렉터리), `-f/--format png`(현재 png만), `--dpi N`(기본 150).
 
+**S2 옵션:** `--strict` (첫 실패 시 즉시 중단; 기본은 continue-on-error).
+
+**종료 코드:** 0(성공) / 1(전체 실패) / 2(부분 실패; `errors.json` 참조) / 64(인자·포맷 오류).
+
+**실패 보고:** continue-on-error 모드에서 페이지 1건이라도 실패하면 `<output_dir>/<stem>/errors.json` 생성 (1-based 페이지 번호, 단계 식별자 `source-read|convert|rasterize|write`).
+
 ## 사용법 (목표 CLI — 후속 슬라이스에서 활성)
 
 ```sh
