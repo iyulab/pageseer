@@ -4,14 +4,16 @@
 //!
 //! # Status
 //!
-//! S0 bootstrap: 공개 `API` signature만 노출. 실제 라스터화는 S1+에서 구현.
+//! S1 (PDF-only end-to-end). `SourceInput::Bytes`와 `Office`/`HWP` 입력은 후속 슬라이스.
 
 #![warn(missing_docs)]
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub mod error;
+pub mod format;
 pub mod options;
+pub mod output;
 pub mod raster;
 pub mod report;
 
@@ -37,16 +39,86 @@ pub enum SourceInput {
 ///
 /// # Errors
 ///
-/// - `PageseerError::Partial` — `strict=false` 모드에서 1건 이상 실패.
-/// - 그 외 변형 — strict 모드에서 첫 실패 시점에 반환, 혹은 전 입력 실패.
-///
-/// # Panics
-///
-/// 현재 버전(S0)은 항상 `PageseerError::Config("not yet implemented (S0 bootstrap)")` 반환.
-pub fn extract(_input: SourceInput, _options: Options) -> Result<ExtractReport, PageseerError> {
-    Err(PageseerError::Config(
-        "not yet implemented (S0 bootstrap)".to_owned(),
-    ))
+/// - `PageseerError::Pdfium` — `PDFium` 라이브러리 로드/렌더 실패.
+/// - `PageseerError::UnsupportedFormat` — 알 수 없거나 S1 미지원 포맷.
+/// - `PageseerError::Config` — `SourceInput::Bytes`(S1 미지원) 등 호출 측 오류.
+/// - `PageseerError::Io` — 디렉터리 생성/파일 쓰기 실패.
+pub fn extract(input: SourceInput, options: Options) -> Result<ExtractReport, PageseerError> {
+    let options = options.normalized();
+    let path = match input {
+        SourceInput::Path(p) => p,
+        SourceInput::Bytes { .. } => {
+            return Err(PageseerError::Config(
+                "SourceInput::Bytes not supported in S1 (PDF path input only)".to_owned(),
+            ));
+        }
+    };
+
+    match format::detect_from_path(&path) {
+        format::DetectedFormat::Pdf => extract_pdf(&path, &options),
+        format::DetectedFormat::Other => Err(PageseerError::UnsupportedFormat {
+            extension: path
+                .extension()
+                .and_then(|s| s.to_str())
+                .unwrap_or("")
+                .to_owned(),
+            path: Some(path),
+        }),
+    }
+}
+
+fn extract_pdf(path: &Path, options: &Options) -> Result<ExtractReport, PageseerError> {
+    use image::ImageFormat as ImgFmt;
+
+    let backend = raster::pdfium::PdfiumBackend::new()?;
+    let images = backend.rasterize_path(path, options.dpi)?;
+    let stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("document")
+        .to_owned();
+    let page_count = images.len();
+
+    let target_dir = if options.flat {
+        options.output_dir.clone()
+    } else {
+        options.output_dir.join(&stem)
+    };
+    std::fs::create_dir_all(&target_dir)?;
+
+    let mut report = ExtractReport::new();
+    for (idx, img) in images.into_iter().enumerate() {
+        let idx_u32 = u32::try_from(idx)
+            .map_err(|_| PageseerError::Pdfium(format!("page index {idx} exceeds u32::MAX")))?;
+        let out = output::page_output_path(
+            &options.output_dir,
+            &stem,
+            idx_u32,
+            page_count,
+            options.format,
+            options.flat,
+        );
+        let img_format = match options.format {
+            ImageFormat::Png => ImgFmt::Png,
+            ImageFormat::Jpeg { .. } => ImgFmt::Jpeg,
+        };
+        let to_save: image::DynamicImage = match options.format {
+            ImageFormat::Jpeg { .. } => img.into_rgb8().into(),
+            ImageFormat::Png => img,
+        };
+        let (w, h) = (to_save.width(), to_save.height());
+        to_save
+            .save_with_format(&out, img_format)
+            .map_err(|e| PageseerError::Io(std::io::Error::other(e.to_string())))?;
+        report.succeeded.push(PageArtifact {
+            source_path: Some(path.to_path_buf()),
+            page_index: idx_u32,
+            output_path: out,
+            width_px: w,
+            height_px: h,
+        });
+    }
+    Ok(report)
 }
 
 #[cfg(test)]
@@ -54,16 +126,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn extract_returns_config_error_in_s0() {
+    fn extract_path_with_unknown_extension_returns_unsupported() {
         let result = extract(
-            SourceInput::Path(PathBuf::from("nonexistent.pdf")),
+            SourceInput::Path(PathBuf::from("nonexistent.xyz")),
             Options::default(),
         );
         match result {
-            Err(PageseerError::Config(msg)) => {
-                assert!(msg.contains("S0"), "message: {msg}");
+            Err(PageseerError::UnsupportedFormat { extension, .. }) => {
+                assert_eq!(extension, "xyz");
             }
-            other => panic!("expected Config error, got {other:?}"),
+            other => panic!("expected UnsupportedFormat, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn extract_bytes_returns_config_error_in_s1() {
+        let result = extract(
+            SourceInput::Bytes {
+                data: vec![1, 2, 3],
+                filename: "x.pdf".to_owned(),
+            },
+            Options::default(),
+        );
+        assert!(matches!(result, Err(PageseerError::Config(_))));
     }
 }
