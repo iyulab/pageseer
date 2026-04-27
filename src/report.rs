@@ -35,7 +35,7 @@ pub struct PageFailure {
 pub enum FailureStage {
     /// 소스 파일 읽기.
     SourceRead,
-    /// 중간 포맷(PDF)으로 변환 (Gotenberg / rhwp).
+    /// 중간 포맷(`PDF`)으로 변환 (Gotenberg / rhwp).
     Convert,
     /// pdfium 라스터화.
     Rasterize,

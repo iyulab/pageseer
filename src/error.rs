@@ -4,17 +4,17 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 
-/// pageseer 공개 API의 루트 에러.
+/// pageseer 공개 `API`의 루트 에러.
 #[derive(Debug, Error)]
 pub enum PageseerError {
     /// 파일 I/O 실패.
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 
-    /// Gotenberg HTTP 오류 (S3에서 사용).
+    /// Gotenberg `HTTP` 오류 (S3에서 사용).
     #[error("gotenberg error (status {status:?}, trace {trace:?}): {message}")]
     Gotenberg {
-        /// HTTP 상태 코드 (연결 실패면 None).
+        /// `HTTP` 상태 코드 (연결 실패면 None).
         status: Option<u16>,
         /// `Gotenberg-Trace` 헤더.
         trace: Option<String>,
@@ -22,11 +22,11 @@ pub enum PageseerError {
         message: String,
     },
 
-    /// PDFium 렌더 실패 (S1+).
+    /// `PDFium` 렌더 실패 (S1+).
     #[error("pdfium error: {0}")]
     Pdfium(String),
 
-    /// rhwp HWP 처리 실패 (S4).
+    /// rhwp `HWP` 처리 실패 (S4).
     #[error("rhwp error: {0}")]
     Rhwp(String),
 

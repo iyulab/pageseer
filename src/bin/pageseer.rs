@@ -1,4 +1,4 @@
-//! pageseer CLI.
+//! pageseer `CLI`.
 //!
 //! S0 bootstrap: `--version`과 `--help`만 동작. 실제 처리는 S1+에서 추가.
 

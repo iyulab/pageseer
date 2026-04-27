@@ -6,9 +6,9 @@ use std::time::Duration;
 /// 출력 이미지 포맷.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImageFormat {
-    /// Lossless PNG.
+    /// Lossless `PNG`.
     Png,
-    /// JPEG with quality (1-100).
+    /// `JPEG` with quality (1-100).
     Jpeg {
         /// 품질 (1-100).
         quality: u8,
@@ -31,7 +31,7 @@ impl ImageFormat {
 pub struct Options {
     /// 출력 이미지 포맷.
     pub format: ImageFormat,
-    /// 라스터 DPI. 기본 150.
+    /// 라스터 `DPI`. 기본 150.
     pub dpi: u32,
     /// 긴 변 최대 픽셀 제한. None이면 무제한.
     pub max_edge: Option<u32>,
@@ -41,7 +41,7 @@ pub struct Options {
     pub flat: bool,
     /// true = 첫 실패 즉시 중단, false = continue-on-error.
     pub strict: bool,
-    /// Gotenberg base URL. None이면 env/기본값으로 해석.
+    /// Gotenberg base `URL`. None이면 env/기본값으로 해석.
     pub gotenberg_url: Option<String>,
     /// Gotenberg 요청 타임아웃.
     pub gotenberg_timeout: Duration,

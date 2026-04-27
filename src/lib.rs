@@ -4,7 +4,7 @@
 //!
 //! # Status
 //!
-//! S0 bootstrap: 공개 API signature만 노출. 실제 라스터화는 S1+에서 구현.
+//! S0 bootstrap: 공개 `API` signature만 노출. 실제 라스터화는 S1+에서 구현.
 
 #![warn(missing_docs)]
 
