@@ -12,6 +12,7 @@ use std::path::PathBuf;
 
 pub mod error;
 pub mod options;
+pub mod raster;
 pub mod report;
 
 pub use error::PageseerError;

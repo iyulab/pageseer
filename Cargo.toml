@@ -20,6 +20,8 @@ path = "src/bin/pageseer.rs"
 [dependencies]
 thiserror = "2"
 clap = { version = "4", features = ["derive"] }
+pdfium-render = "0.9"
+image = "0.25"
 
 [dev-dependencies]
 
