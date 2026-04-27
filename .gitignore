@@ -22,6 +22,9 @@ Thumbs.db
 # pdfium prebuilt (로컬 전용; CI/릴리스에서는 별도 다운로드)
 /pdfium/
 
+# Test fixtures generated at runtime (printpdf-built)
+/tests/fixtures/sample.pdf
+
 # Claude Code local artifacts (user-only, not shared via git)
 /CLAUDE.md
 /claudedocs/
