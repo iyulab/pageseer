@@ -7,12 +7,14 @@ fn bin() -> &'static str {
 }
 
 #[test]
-fn unsupported_format_exits_64() {
+fn unsupported_format_now_exits_1() {
+    // v0.2-A: 미지원 포맷은 per-doc operational failure (DocumentOutcome::Failed) → exit 1.
+    // v0.1: usage error로 exit 64였음.
     let status = Command::new(bin())
         .arg("foo.xyz")
         .status()
         .expect("failed to run pageseer");
-    assert_eq!(status.code(), Some(64));
+    assert_eq!(status.code(), Some(1));
 }
 
 #[test]

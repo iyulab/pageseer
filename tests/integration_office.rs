@@ -10,7 +10,7 @@
 use std::path::{Path, PathBuf};
 
 use docx_rs::{Docx, Paragraph, Run};
-use pageseer::{extract, ImageFormat, Options, SourceInput};
+use pageseer::{extract, DocumentOutcome, ImageFormat, Options, SourceInput};
 
 mod common;
 
@@ -38,15 +38,19 @@ fn docx_via_gotenberg_produces_pngs() {
         gotenberg_url: Some(url),
         ..Options::default()
     };
-    let report = extract(SourceInput::Path(fixture.clone()), opts)
+    let report = extract(&[SourceInput::Path(fixture.clone())], opts)
         .expect("extract failed; ensure pdfium library is installed at ./pdfium/");
-    assert_eq!(report.failed_count(), 0);
+    let inner = match &report.documents[0].outcome {
+        DocumentOutcome::Processed(r) => r,
+        other => panic!("expected Processed, got {other:?}"),
+    };
+    assert_eq!(inner.failed_count(), 0);
     assert!(
-        report.succeeded_count() >= 1,
+        inner.succeeded_count() >= 1,
         "expected >=1 page, got {}",
-        report.succeeded_count()
+        inner.succeeded_count()
     );
-    for art in &report.succeeded {
+    for art in &inner.succeeded {
         assert!(art.output_path.exists());
         assert_eq!(art.source_path.as_deref(), Some(fixture.as_path()));
     }

@@ -6,7 +6,7 @@
 
 use std::path::{Path, PathBuf};
 
-use pageseer::{extract, ImageFormat, Options, SourceInput};
+use pageseer::{extract, DocumentOutcome, ImageFormat, Options, SourceInput};
 use printpdf::{
     BuiltinFont, Mm, Op, PdfDocument, PdfFontHandle, PdfPage, PdfSaveOptions, Point, Pt, TextItem,
 };
@@ -29,18 +29,22 @@ fn three_page_pdf_produces_three_pngs() {
         output_dir: tmp.clone(),
         ..Options::default()
     };
-    let report = extract(SourceInput::Path(fixture.clone()), opts)
+    let report = extract(&[SourceInput::Path(fixture.clone())], opts)
         .expect("extract failed; ensure pdfium library is installed at ./pdfium/");
+    let inner = match &report.documents[0].outcome {
+        DocumentOutcome::Processed(r) => r,
+        other => panic!("expected Processed, got {other:?}"),
+    };
 
-    assert_eq!(report.failed_count(), 0);
+    assert_eq!(inner.failed_count(), 0);
     assert_eq!(
-        report.succeeded_count(),
+        inner.succeeded_count(),
         3,
         "expected 3 pages, got {}",
-        report.succeeded_count()
+        inner.succeeded_count()
     );
 
-    for art in &report.succeeded {
+    for art in &inner.succeeded {
         assert!(
             art.output_path.exists(),
             "missing output: {:?}",
@@ -58,7 +62,7 @@ fn three_page_pdf_produces_three_pngs() {
     let expected = ["page-001.png", "page-002.png", "page-003.png"];
     for (i, name) in expected.iter().enumerate() {
         assert_eq!(
-            report.succeeded[i].output_path.file_name().unwrap(),
+            inner.succeeded[i].output_path.file_name().unwrap(),
             *name,
             "unexpected file name at index {i}"
         );

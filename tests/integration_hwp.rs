@@ -10,7 +10,7 @@
 
 use std::path::PathBuf;
 
-use pageseer::{extract, ImageFormat, Options, SourceInput};
+use pageseer::{extract, DocumentOutcome, ImageFormat, Options, SourceInput};
 
 mod common;
 
@@ -31,18 +31,22 @@ fn hwp_sample_produces_pages() {
         output_dir: tmp,
         ..Options::default()
     };
-    let report = extract(SourceInput::Path(fixture.clone()), opts).expect(
+    let report = extract(&[SourceInput::Path(fixture.clone())], opts).expect(
         "extract failed; ensure pdfium library is installed at ./pdfium/ \
          and the hwp parses successfully",
     );
+    let inner = match &report.documents[0].outcome {
+        DocumentOutcome::Processed(r) => r,
+        other => panic!("expected Processed, got {other:?}"),
+    };
 
-    assert_eq!(report.failed_count(), 0);
+    assert_eq!(inner.failed_count(), 0);
     assert!(
-        report.succeeded_count() >= 1,
+        inner.succeeded_count() >= 1,
         "expected ≥1 page, got {}",
-        report.succeeded_count()
+        inner.succeeded_count()
     );
-    for art in &report.succeeded {
+    for art in &inner.succeeded {
         assert!(art.output_path.exists(), "missing: {:?}", art.output_path);
         assert_eq!(
             art.source_path.as_deref(),

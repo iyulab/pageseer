@@ -1,8 +1,5 @@
 //! 배치 orchestration 헬퍼 — spec §1.
 
-// Task 7에서 lib.rs가 이 함수들을 호출하기 전까지 일시적으로 허용.
-#![allow(dead_code)]
-
 use std::path::{Path, PathBuf};
 
 use crate::error::PageseerError;
@@ -102,6 +99,19 @@ impl ProgressSink for StderrProgressSink {
             s.documents_skipped,
             see_errors
         );
+    }
+}
+
+/// 진행 로그/에러 노출용 표시 라벨. `Path` 입력은 `file_name`, `Bytes`는 filename hint.
+#[must_use]
+pub(crate) fn source_label(input: &SourceInput) -> String {
+    match input {
+        SourceInput::Path(p) => p
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("<no-name>")
+            .to_owned(),
+        SourceInput::Bytes { filename, .. } => filename.clone(),
     }
 }
 

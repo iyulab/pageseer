@@ -12,7 +12,7 @@ use pageseer::{extract, ImageFormat, Options, PageseerError, SourceInput};
 #[derive(Parser, Debug)]
 #[command(name = "pageseer", version, about, long_about = None)]
 struct Cli {
-    /// 입력 `PDF` 파일.
+    /// 입력 파일.
     input: PathBuf,
 
     /// 출력 디렉터리. 기본 `./out`.
@@ -43,7 +43,7 @@ struct Cli {
     #[arg(long = "flat")]
     flat: bool,
 
-    /// 문서 단위 병렬도. v0.1은 단일 입력만 지원하므로 효과 없음 (multi-input은 v0.2).
+    /// 문서 단위 병렬도.
     #[arg(short = 'j', long = "concurrency", default_value_t = 1)]
     concurrency: usize,
 
@@ -79,21 +79,34 @@ fn main() -> ExitCode {
         gotenberg_timeout: Duration::from_secs(cli.gotenberg_timeout),
         concurrency: cli.concurrency,
     };
-    match extract(SourceInput::Path(cli.input), opts) {
+    let inputs = vec![SourceInput::Path(cli.input)];
+    match extract(&inputs, opts) {
         Ok(report) => {
-            eprintln!("pageseer: {} pages OK, 0 failed", report.succeeded_count());
-            ExitCode::from(0)
+            let s = report.summary;
+            if s.pages_failed == 0 && s.documents_failed == 0 {
+                eprintln!(
+                    "pageseer: {} pages OK across {} documents",
+                    s.pages_succeeded, s.documents_total
+                );
+                ExitCode::from(0)
+            } else if s.pages_succeeded > 0 {
+                eprintln!(
+                    "pageseer: {}/{} pages OK ({} failed) — see errors.json",
+                    s.pages_succeeded,
+                    s.pages_succeeded + s.pages_failed,
+                    s.pages_failed + s.documents_failed
+                );
+                ExitCode::from(2)
+            } else {
+                eprintln!(
+                    "pageseer: all failed ({} documents failed) — see errors.json",
+                    s.documents_failed
+                );
+                ExitCode::from(1)
+            }
         }
-        Err(PageseerError::Partial(report)) => {
-            eprintln!(
-                "pageseer: {} pages OK, {} failed (see errors.json)",
-                report.succeeded_count(),
-                report.failed_count()
-            );
-            ExitCode::from(2)
-        }
-        Err(e @ (PageseerError::Config(_) | PageseerError::UnsupportedFormat { .. })) => {
-            eprintln!("pageseer: {e}");
+        Err(PageseerError::Config(msg)) => {
+            eprintln!("pageseer: config error: {msg}");
             ExitCode::from(64)
         }
         Err(e) => {
