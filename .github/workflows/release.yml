@@ -78,7 +78,7 @@ jobs:
           mkdir -p "$stage"
           cp "target/release/${{ matrix.bin_name }}" "$stage/"
           cp "pdfium/${{ matrix.pdfium_lib }}" "$stage/"
-          cp README.md ROADMAP.md LICENSE "$stage/"
+          cp README.md LICENSE "$stage/"
           tar -czf "${stage}.tar.gz" "$stage"
           ls -la "${stage}.tar.gz"
 
