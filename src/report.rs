@@ -75,6 +75,74 @@ pub struct BatchSummary {
     pub pages_failed: u32,
 }
 
+impl BatchSummary {
+    /// `DocumentResult` 슬라이스로부터 카운트 요약을 산출한다.
+    #[must_use]
+    pub fn from_documents(docs: &[DocumentResult]) -> Self {
+        let mut s = Self {
+            documents_total: u32::try_from(docs.len()).unwrap_or(u32::MAX),
+            ..Self::default()
+        };
+        for d in docs {
+            match &d.outcome {
+                DocumentOutcome::Processed(report) => {
+                    if report.failed.is_empty() {
+                        s.documents_succeeded = s.documents_succeeded.saturating_add(1);
+                    } else {
+                        s.documents_partial = s.documents_partial.saturating_add(1);
+                    }
+                    s.pages_succeeded = s
+                        .pages_succeeded
+                        .saturating_add(u32::try_from(report.succeeded.len()).unwrap_or(u32::MAX));
+                    s.pages_failed = s
+                        .pages_failed
+                        .saturating_add(u32::try_from(report.failed.len()).unwrap_or(u32::MAX));
+                }
+                DocumentOutcome::Failed(_) => {
+                    s.documents_failed = s.documents_failed.saturating_add(1);
+                }
+                DocumentOutcome::Skipped => {
+                    s.documents_skipped = s.documents_skipped.saturating_add(1);
+                }
+            }
+        }
+        s
+    }
+}
+
+/// 한 입력 문서의 처리 결과.
+#[derive(Debug, Clone)]
+pub struct DocumentResult {
+    /// 입력 `Vec<SourceInput>`에서의 위치 (0-based).
+    pub input_index: u32,
+    /// 표시용 라벨. Path 입력은 경로 문자열, Bytes 입력은 filename hint.
+    pub source_label: String,
+    /// 이 문서의 산출물이 모인 디렉터리 (dedup이 적용된 최종 경로).
+    pub output_dir: PathBuf,
+    /// 처리 결과.
+    pub outcome: DocumentOutcome,
+}
+
+/// 한 문서가 어떻게 끝났는지.
+#[derive(Debug, Clone)]
+pub enum DocumentOutcome {
+    /// 페이지 단계까지 도달 — 일부/전부 페이지 성공/실패 가능.
+    Processed(ExtractReport),
+    /// 문서 단위 치명적 실패 (`SourceRead` / `Convert` 단계).
+    Failed(PageFailure),
+    /// strict 모드에서 다른 문서가 먼저 실패해 시도되지 않음.
+    Skipped,
+}
+
+/// 배치 처리 결과 — `extract`의 반환 타입.
+#[derive(Debug, Clone)]
+pub struct BatchReport {
+    /// 입력 순서대로의 문서별 결과.
+    pub documents: Vec<DocumentResult>,
+    /// 문서/페이지 카운트 요약.
+    pub summary: BatchSummary,
+}
+
 /// 배치 처리 결과 집계.
 #[derive(Debug, Clone, Default)]
 pub struct ExtractReport {
@@ -168,5 +236,121 @@ mod tests {
         };
         assert_eq!(s.documents_total, 3);
         assert_eq!(s.pages_succeeded, 29);
+    }
+
+    #[test]
+    fn document_outcome_processed_holds_extract_report() {
+        let mut inner = ExtractReport::new();
+        inner.failed.push(PageFailure {
+            source_path: None,
+            page_index: Some(0),
+            stage: FailureStage::Rasterize,
+            message: "x".into(),
+        });
+        let outcome = DocumentOutcome::Processed(inner);
+        match outcome {
+            DocumentOutcome::Processed(r) => assert_eq!(r.failed_count(), 1),
+            _ => panic!("expected Processed"),
+        }
+    }
+
+    #[test]
+    fn document_outcome_failed_holds_page_failure() {
+        let f = PageFailure {
+            source_path: None,
+            page_index: None,
+            stage: FailureStage::Convert,
+            message: "boom".into(),
+        };
+        let outcome = DocumentOutcome::Failed(f);
+        assert!(matches!(outcome, DocumentOutcome::Failed(_)));
+    }
+
+    #[test]
+    fn document_outcome_skipped_is_constructable() {
+        let outcome = DocumentOutcome::Skipped;
+        assert!(matches!(outcome, DocumentOutcome::Skipped));
+    }
+
+    #[test]
+    fn batch_report_documents_field_writable() {
+        let report = BatchReport {
+            documents: vec![],
+            summary: BatchSummary::default(),
+        };
+        assert_eq!(report.documents.len(), 0);
+    }
+
+    #[test]
+    fn batch_summary_from_documents_counts_processed_only() {
+        use std::path::PathBuf;
+        let mut full = ExtractReport::new();
+        full.succeeded.push(PageArtifact {
+            source_path: None,
+            page_index: 0,
+            output_path: PathBuf::from("a.png"),
+            width_px: 10,
+            height_px: 10,
+        });
+        full.succeeded.push(PageArtifact {
+            source_path: None,
+            page_index: 1,
+            output_path: PathBuf::from("b.png"),
+            width_px: 10,
+            height_px: 10,
+        });
+        let mut partial = ExtractReport::new();
+        partial.succeeded.push(PageArtifact {
+            source_path: None,
+            page_index: 0,
+            output_path: PathBuf::from("c.png"),
+            width_px: 10,
+            height_px: 10,
+        });
+        partial.failed.push(PageFailure {
+            source_path: None,
+            page_index: Some(1),
+            stage: FailureStage::Rasterize,
+            message: "x".into(),
+        });
+        let docs = vec![
+            DocumentResult {
+                input_index: 0,
+                source_label: "a".into(),
+                output_dir: PathBuf::from("a"),
+                outcome: DocumentOutcome::Processed(full),
+            },
+            DocumentResult {
+                input_index: 1,
+                source_label: "b".into(),
+                output_dir: PathBuf::from("b"),
+                outcome: DocumentOutcome::Processed(partial),
+            },
+            DocumentResult {
+                input_index: 2,
+                source_label: "c".into(),
+                output_dir: PathBuf::from("c"),
+                outcome: DocumentOutcome::Failed(PageFailure {
+                    source_path: None,
+                    page_index: None,
+                    stage: FailureStage::Convert,
+                    message: "x".into(),
+                }),
+            },
+            DocumentResult {
+                input_index: 3,
+                source_label: "d".into(),
+                output_dir: PathBuf::from("d"),
+                outcome: DocumentOutcome::Skipped,
+            },
+        ];
+        let s = BatchSummary::from_documents(&docs);
+        assert_eq!(s.documents_total, 4);
+        assert_eq!(s.documents_succeeded, 1);
+        assert_eq!(s.documents_partial, 1);
+        assert_eq!(s.documents_failed, 1);
+        assert_eq!(s.documents_skipped, 1);
+        assert_eq!(s.pages_succeeded, 3);
+        assert_eq!(s.pages_failed, 1);
     }
 }

@@ -22,7 +22,10 @@ pub mod report;
 
 pub use error::PageseerError;
 pub use options::{ImageFormat, Options};
-pub use report::{ExtractReport, FailureStage, PageArtifact, PageFailure};
+pub use report::{
+    BatchReport, BatchSummary, DocumentOutcome, DocumentResult, ExtractReport, FailureStage,
+    PageArtifact, PageFailure,
+};
 
 /// 라이브러리 소비자가 넘기는 입력 소스.
 #[derive(Debug, Clone)]
