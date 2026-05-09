@@ -304,14 +304,17 @@ fn rasterize_pdf_into_outcome(
                 continue;
             }
         };
-        let out = output::page_output_path(
-            target_dir,
-            stem,
-            idx_u32,
-            page_count,
-            options.format,
-            options.flat,
-        );
+        // In non-flat mode, target_dir is already output_root/stem (from
+        // dedup_output_dirs), so pages go directly in target_dir as "page-NNN.ext".
+        // In flat mode, target_dir is output_root and page_output_path adds "stem-NNN.ext".
+        let out = if options.flat {
+            output::page_output_path(target_dir, stem, idx_u32, page_count, options.format, true)
+        } else {
+            let pad = output::padding_width(page_count);
+            let one_based = idx_u32 + 1;
+            let ext = options.format.extension();
+            target_dir.join(format!("page-{one_based:0pad$}.{ext}"))
+        };
         let scaled = raster::apply_max_edge(img, options.max_edge);
         let to_save: image::DynamicImage = match options.format {
             ImageFormat::Jpeg { .. } => scaled.into_rgb8().into(),
