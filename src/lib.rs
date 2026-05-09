@@ -154,7 +154,7 @@ fn process_one_document(
                 page_index: None,
                 stage: FailureStage::SourceRead,
                 message: format!(
-                    "SourceInput::Bytes not supported in v0.2-A (filename={filename})"
+                    "SourceInput::Bytes is not yet implemented (filename={filename})"
                 ),
             });
         }
