@@ -10,6 +10,7 @@
 
 use std::path::{Path, PathBuf};
 
+mod batch;
 pub mod error;
 pub mod errors_json;
 pub mod format;
