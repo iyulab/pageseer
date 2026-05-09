@@ -153,9 +153,7 @@ fn process_one_document(
                 source_path: None,
                 page_index: None,
                 stage: FailureStage::SourceRead,
-                message: format!(
-                    "SourceInput::Bytes is not yet implemented (filename={filename})"
-                ),
+                message: format!("SourceInput::Bytes is not yet implemented (filename={filename})"),
             });
         }
     };
