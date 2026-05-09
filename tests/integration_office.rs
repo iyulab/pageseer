@@ -44,7 +44,12 @@ fn docx_via_gotenberg_produces_pngs() {
         DocumentOutcome::Processed(r) => r,
         other => panic!("expected Processed, got {other:?}"),
     };
-    assert_eq!(inner.failed_count(), 0);
+    assert!(
+        inner.failed_count() == 0,
+        "expected 0 page failures, got {}; failures: {:?}",
+        inner.failed_count(),
+        inner.failed
+    );
     assert!(
         inner.succeeded_count() >= 1,
         "expected >=1 page, got {}",

@@ -62,7 +62,7 @@ jobs:
         run: cargo test --lib --bins --test integration_exit_codes --all-features --locked --verbose
 
       - name: cargo test (integration_pdf)
-        run: cargo test --test integration_pdf --all-features --locked --verbose -- --include-ignored
+        run: cargo test --test integration_pdf --all-features --locked --verbose -- --include-ignored --test-threads=1
 
       - name: cargo build (release)
         run: cargo build --release --locked
