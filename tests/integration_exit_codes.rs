@@ -38,6 +38,35 @@ fn missing_required_input_exits_with_clap_error() {
 }
 
 #[test]
+fn multi_input_all_unsupported_exits_1() {
+    let status = Command::new(bin())
+        .args(["a.xyz", "b.xyz", "c.xyz"])
+        .status()
+        .expect("failed to run pageseer");
+    assert_eq!(status.code(), Some(1));
+}
+
+#[test]
+fn unknown_format_flag_still_exits_64() {
+    let status = Command::new(bin())
+        .args(["a.pdf", "b.pdf"])
+        .args(["-f", "webp"])
+        .status()
+        .expect("failed to run pageseer");
+    assert_eq!(status.code(), Some(64));
+}
+
+#[test]
+fn flat_with_colliding_stems_exits_64() {
+    let status = Command::new(bin())
+        .args(["dir1/x.xyz", "dir2/x.xyz"])
+        .arg("--flat")
+        .status()
+        .expect("failed to run pageseer");
+    assert_eq!(status.code(), Some(64));
+}
+
+#[test]
 fn help_includes_s5_options() {
     let output = Command::new(bin())
         .arg("--help")

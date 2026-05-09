@@ -31,18 +31,16 @@ fn three_page_pdf_produces_three_pngs() {
     };
     let report = extract(&[SourceInput::Path(fixture.clone())], opts)
         .expect("extract failed; ensure pdfium library is installed at ./pdfium/");
+
+    assert_eq!(report.summary.documents_total, 1);
+    assert_eq!(report.summary.documents_succeeded, 1);
+    assert_eq!(report.summary.pages_failed, 0);
+    assert_eq!(report.summary.pages_succeeded, 3);
+
     let inner = match &report.documents[0].outcome {
         DocumentOutcome::Processed(r) => r,
         other => panic!("expected Processed, got {other:?}"),
     };
-
-    assert_eq!(inner.failed_count(), 0);
-    assert_eq!(
-        inner.succeeded_count(),
-        3,
-        "expected 3 pages, got {}",
-        inner.succeeded_count()
-    );
 
     for art in &inner.succeeded {
         assert!(
@@ -67,6 +65,74 @@ fn three_page_pdf_produces_three_pngs() {
             "unexpected file name at index {i}"
         );
     }
+}
+
+#[test]
+#[ignore = "requires pdfium library at ./pdfium/ or system; run with --include-ignored"]
+fn two_pdfs_with_unique_stems_produce_separate_dirs() {
+    let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sample.pdf");
+    if !fixture.exists() {
+        ensure_sample_pdf(&fixture).expect("fixture generation failed");
+    }
+    let alt = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sample-alt.pdf");
+    if !alt.exists() {
+        std::fs::copy(&fixture, &alt).expect("copy fixture");
+    }
+
+    let tmp = common::tempfile_dir("multi-pdf-unique");
+    let opts = Options {
+        format: ImageFormat::Png,
+        dpi: 72,
+        output_dir: tmp.clone(),
+        ..Options::default()
+    };
+    let inputs = vec![
+        SourceInput::Path(fixture.clone()),
+        SourceInput::Path(alt.clone()),
+    ];
+    let report = extract(&inputs, opts).expect("extract failed");
+
+    assert_eq!(report.summary.documents_total, 2);
+    assert_eq!(report.summary.documents_succeeded, 2);
+    assert_eq!(report.summary.documents_failed, 0);
+    assert_eq!(report.summary.pages_succeeded, 6);
+    assert_eq!(report.summary.pages_failed, 0);
+
+    assert!(tmp.join("sample").is_dir(), "expected sample/");
+    assert!(tmp.join("sample-alt").is_dir(), "expected sample-alt/");
+    assert!(
+        !tmp.join("errors.json").exists(),
+        "no errors.json on full success"
+    );
+}
+
+#[test]
+#[ignore = "requires pdfium library at ./pdfium/ or system; run with --include-ignored"]
+fn two_pdfs_with_colliding_stems_get_dedup_suffix() {
+    let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sample.pdf");
+    if !fixture.exists() {
+        ensure_sample_pdf(&fixture).expect("fixture generation failed");
+    }
+
+    let tmp = common::tempfile_dir("multi-pdf-collision");
+    let opts = Options {
+        format: ImageFormat::Png,
+        dpi: 72,
+        output_dir: tmp.clone(),
+        ..Options::default()
+    };
+    let inputs = vec![
+        SourceInput::Path(fixture.clone()),
+        SourceInput::Path(fixture.clone()),
+    ];
+    let report = extract(&inputs, opts).expect("extract failed");
+
+    assert_eq!(report.summary.documents_total, 2);
+    assert_eq!(report.summary.documents_succeeded, 2);
+    assert_eq!(report.summary.pages_succeeded, 6);
+
+    assert!(tmp.join("sample").is_dir(), "first input -> sample/");
+    assert!(tmp.join("sample-2").is_dir(), "second input -> sample-2/");
 }
 
 fn ensure_sample_pdf(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
