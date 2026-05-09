@@ -56,6 +56,25 @@ impl FailureStage {
     }
 }
 
+/// 배치 처리 전체 집계 요약.
+#[derive(Debug, Clone, Default)]
+pub struct BatchSummary {
+    /// 처리 대상 문서 수 (dedup 후).
+    pub documents_total: u32,
+    /// 모든 페이지가 성공한 문서 수.
+    pub documents_succeeded: u32,
+    /// 일부 페이지만 성공한 문서 수.
+    pub documents_partial: u32,
+    /// 단 한 페이지도 성공하지 못한 문서 수.
+    pub documents_failed: u32,
+    /// `--strict` cancel로 건너뛴 문서 수.
+    pub documents_skipped: u32,
+    /// 전체 성공 페이지 수.
+    pub pages_succeeded: u32,
+    /// 전체 실패 페이지 수.
+    pub pages_failed: u32,
+}
+
 /// 배치 처리 결과 집계.
 #[derive(Debug, Clone, Default)]
 pub struct ExtractReport {
@@ -122,5 +141,32 @@ mod tests {
         assert_eq!(FailureStage::Convert.as_str(), "convert");
         assert_eq!(FailureStage::Rasterize.as_str(), "rasterize");
         assert_eq!(FailureStage::Write.as_str(), "write");
+    }
+
+    #[test]
+    fn batch_summary_default_is_all_zero() {
+        let s = BatchSummary::default();
+        assert_eq!(s.documents_total, 0);
+        assert_eq!(s.documents_succeeded, 0);
+        assert_eq!(s.documents_partial, 0);
+        assert_eq!(s.documents_failed, 0);
+        assert_eq!(s.documents_skipped, 0);
+        assert_eq!(s.pages_succeeded, 0);
+        assert_eq!(s.pages_failed, 0);
+    }
+
+    #[test]
+    fn batch_summary_fields_settable() {
+        let s = BatchSummary {
+            documents_total: 3,
+            documents_succeeded: 1,
+            documents_partial: 1,
+            documents_failed: 1,
+            documents_skipped: 0,
+            pages_succeeded: 29,
+            pages_failed: 1,
+        };
+        assert_eq!(s.documents_total, 3);
+        assert_eq!(s.pages_succeeded, 29);
     }
 }
