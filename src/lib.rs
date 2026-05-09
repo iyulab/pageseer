@@ -68,20 +68,32 @@ pub fn extract_with_progress(
     std::fs::create_dir_all(&options.output_dir)?;
 
     let total = u32::try_from(inputs.len()).unwrap_or(u32::MAX);
-    let mut documents: Vec<DocumentResult> = Vec::with_capacity(inputs.len());
-    for (i, input) in inputs.iter().enumerate() {
-        let idx = u32::try_from(i).unwrap_or(u32::MAX);
-        let label = batch::source_label(input);
-        progress.record_start(idx, total, &label);
-        let outcome = process_one_document(input, &mapping[i], &options);
-        report_progress(progress, idx, total, &label, &outcome);
-        documents.push(DocumentResult {
-            input_index: idx,
-            source_label: label,
-            output_dir: mapping[i].clone(),
-            outcome,
-        });
-    }
+
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(options.concurrency)
+        .build()
+        .map_err(|e| PageseerError::Config(format!("rayon pool: {e}")))?;
+
+    let documents: Vec<DocumentResult> = pool.install(|| {
+        use rayon::prelude::*;
+        inputs
+            .par_iter()
+            .enumerate()
+            .map(|(i, input)| {
+                let idx = u32::try_from(i).unwrap_or(u32::MAX);
+                let label = batch::source_label(input);
+                progress.record_start(idx, total, &label);
+                let outcome = process_one_document(input, &mapping[i], &options);
+                report_progress(progress, idx, total, &label, &outcome);
+                DocumentResult {
+                    input_index: idx,
+                    source_label: label,
+                    output_dir: mapping[i].clone(),
+                    outcome,
+                }
+            })
+            .collect()
+    });
 
     let summary = BatchSummary::from_documents(&documents);
     let report = BatchReport { documents, summary };
@@ -412,6 +424,42 @@ mod tests {
         let _ = std::fs::remove_file(&tmp);
         assert!(bytes.len() >= 3, "jpeg too small");
         assert_eq!(&bytes[..3], &[0xFF, 0xD8, 0xFF], "missing JPEG SOI marker");
+    }
+
+    #[test]
+    fn extract_with_concurrency_two_yields_same_results_as_one() {
+        let inputs = vec![
+            SourceInput::Path(PathBuf::from("a.xyz")),
+            SourceInput::Path(PathBuf::from("b.xyz")),
+            SourceInput::Path(PathBuf::from("c.xyz")),
+            SourceInput::Path(PathBuf::from("d.xyz")),
+        ];
+        let r1 = extract(
+            &inputs,
+            Options {
+                concurrency: 1,
+                ..Options::default()
+            },
+        )
+        .expect("c=1");
+        let r4 = extract(
+            &inputs,
+            Options {
+                concurrency: 4,
+                ..Options::default()
+            },
+        )
+        .expect("c=4");
+        assert_eq!(r1.summary.documents_total, 4);
+        assert_eq!(r1.summary.documents_failed, 4);
+        assert_eq!(r4.summary.documents_total, 4);
+        assert_eq!(r4.summary.documents_failed, 4);
+        let mut idx1: Vec<u32> = r1.documents.iter().map(|d| d.input_index).collect();
+        let mut idx4: Vec<u32> = r4.documents.iter().map(|d| d.input_index).collect();
+        idx1.sort_unstable();
+        idx4.sort_unstable();
+        assert_eq!(idx1, vec![0, 1, 2, 3]);
+        assert_eq!(idx4, vec![0, 1, 2, 3]);
     }
 
     #[test]
