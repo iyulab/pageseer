@@ -268,7 +268,7 @@ fn rasterize_pdf_into_outcome(
     target_dir: &Path,
     options: &Options,
 ) -> DocumentOutcome {
-    let backend = match raster::pdfium::PdfiumBackend::new() {
+    let backend = match raster::pdfium::global() {
         Ok(b) => b,
         Err(e) => return failed_outcome(path, FailureStage::Rasterize, e.to_string()),
     };

@@ -1,20 +1,33 @@
 //! `PDFium` 라스터 백엔드 (pdfium-render 0.9 wrapping).
 
 use std::path::Path;
+use std::sync::OnceLock;
 
 use image::DynamicImage;
 use pdfium_render::prelude::*;
 
 use crate::error::PageseerError;
 
-/// 단일 `PDFium` 인스턴스. 전체 프로세스에서 1개만 생성 (`FFI` 내부 mutex로 직렬화됨).
+static PDFIUM: OnceLock<Result<PdfiumBackend, String>> = OnceLock::new();
+
+/// process-global 싱글톤 `PdfiumBackend`를 반환한다.
+///
+/// 최초 호출 시 라이브러리를 로드하고 `FPDF_InitLibrary()`를 호출한다.
+/// 이후 호출은 동일 결과를 즉시 반환하므로 다중 스레드에서 동시 호출해도 안전하다.
+pub fn global() -> Result<&'static PdfiumBackend, PageseerError> {
+    PDFIUM
+        .get_or_init(|| PdfiumBackend::init().map_err(|e| e.to_string()))
+        .as_ref()
+        .map_err(|e| PageseerError::Pdfium(e.clone()))
+}
+
+/// `FPDF_InitLibrary()`가 process 당 정확히 1회 호출되도록 보장하는 백엔드.
 pub struct PdfiumBackend {
     pdfium: Pdfium,
 }
 
 impl PdfiumBackend {
-    /// 1순위 `./pdfium/` 디렉터리, 2순위 시스템 경로에서 라이브러리를 찾는다.
-    pub fn new() -> Result<Self, PageseerError> {
+    fn init() -> Result<Self, PageseerError> {
         let bindings =
             Pdfium::bind_to_library(Pdfium::pdfium_platform_library_name_at_path("./pdfium/"))
                 .or_else(|_| Pdfium::bind_to_system_library())
