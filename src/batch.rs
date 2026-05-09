@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::error::PageseerError;
-use crate::report::BatchSummary;
+use crate::report::{BatchSummary, DocumentOutcome};
 use crate::SourceInput;
 
 /// 배치 진행 상황 콜백. 모든 메서드는 동시 스레드에서 호출될 수 있다.
@@ -99,6 +99,16 @@ impl ProgressSink for StderrProgressSink {
             s.documents_skipped,
             see_errors
         );
+    }
+}
+
+/// `outcome`이 어떤 종류든 실패를 포함하면 `true` (`Processed.failed.len() > 0` 또는 `Failed`).
+#[must_use]
+pub(crate) fn has_any_failure(outcome: &DocumentOutcome) -> bool {
+    match outcome {
+        DocumentOutcome::Processed(r) => !r.failed.is_empty(),
+        DocumentOutcome::Failed(_) => true,
+        DocumentOutcome::Skipped => false,
     }
 }
 

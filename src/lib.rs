@@ -5,6 +5,8 @@
 #![warn(missing_docs)]
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 pub mod error;
 pub mod errors_json;
@@ -74,6 +76,8 @@ pub fn extract_with_progress(
         .build()
         .map_err(|e| PageseerError::Config(format!("rayon pool: {e}")))?;
 
+    let cancel = Arc::new(AtomicBool::new(false));
+
     let documents: Vec<DocumentResult> = pool.install(|| {
         use rayon::prelude::*;
         inputs
@@ -82,9 +86,21 @@ pub fn extract_with_progress(
             .map(|(i, input)| {
                 let idx = u32::try_from(i).unwrap_or(u32::MAX);
                 let label = batch::source_label(input);
+                if cancel.load(Ordering::Acquire) {
+                    progress.record_skipped(idx, total, &label);
+                    return DocumentResult {
+                        input_index: idx,
+                        source_label: label,
+                        output_dir: mapping[i].clone(),
+                        outcome: DocumentOutcome::Skipped,
+                    };
+                }
                 progress.record_start(idx, total, &label);
                 let outcome = process_one_document(input, &mapping[i], &options);
                 report_progress(progress, idx, total, &label, &outcome);
+                if options.strict && batch::has_any_failure(&outcome) {
+                    cancel.store(true, Ordering::Release);
+                }
                 DocumentResult {
                     input_index: idx,
                     source_label: label,
@@ -424,6 +440,53 @@ mod tests {
         let _ = std::fs::remove_file(&tmp);
         assert!(bytes.len() >= 3, "jpeg too small");
         assert_eq!(&bytes[..3], &[0xFF, 0xD8, 0xFF], "missing JPEG SOI marker");
+    }
+
+    #[test]
+    fn strict_first_failure_skips_subsequent_inputs() {
+        let inputs = vec![
+            SourceInput::Path(PathBuf::from("first.xyz")),
+            SourceInput::Path(PathBuf::from("second.xyz")),
+            SourceInput::Path(PathBuf::from("third.xyz")),
+        ];
+        let opts = Options {
+            strict: true,
+            concurrency: 1,
+            ..Options::default()
+        };
+        let report = extract(&inputs, opts).expect("init ok");
+        assert_eq!(report.summary.documents_failed, 1);
+        assert_eq!(report.summary.documents_skipped, 2);
+        assert_eq!(report.summary.documents_succeeded, 0);
+        assert_eq!(report.summary.documents_partial, 0);
+        assert!(matches!(
+            report.documents[0].outcome,
+            DocumentOutcome::Failed(_)
+        ));
+        assert!(matches!(
+            report.documents[1].outcome,
+            DocumentOutcome::Skipped
+        ));
+        assert!(matches!(
+            report.documents[2].outcome,
+            DocumentOutcome::Skipped
+        ));
+    }
+
+    #[test]
+    fn non_strict_continues_after_failure() {
+        let inputs = vec![
+            SourceInput::Path(PathBuf::from("first.xyz")),
+            SourceInput::Path(PathBuf::from("second.xyz")),
+        ];
+        let opts = Options {
+            strict: false,
+            concurrency: 1,
+            ..Options::default()
+        };
+        let report = extract(&inputs, opts).expect("init ok");
+        assert_eq!(report.summary.documents_failed, 2);
+        assert_eq!(report.summary.documents_skipped, 0);
     }
 
     #[test]
