@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added (v0.2-A — multi-input batch)
+
+- Library API: `extract(&[SourceInput], Options) -> Result<BatchReport, PageseerError>`.
+  - Replaces the single-input `extract(SourceInput, Options)` of v0.1.
+  - New types: `BatchReport`, `BatchSummary`, `DocumentResult`, `DocumentOutcome` (Processed / Failed / Skipped).
+- Document-level parallelism via rayon: `Options::concurrency` now controls a rayon `ThreadPool`.
+- `--strict` flag propagates first failure: subsequent documents receive `DocumentOutcome::Skipped`.
+- CLI: positional argument changed from a single `<INPUT>` to one-or-more `<INPUT>...`.
+- CLI: progress events written to stderr via `StderrProgressSink`.
+- `errors.json` v2 schema: single top-level `<output>/errors.json` across all documents in the batch.
+- `extract_with_progress(&[SourceInput], Options, &dyn ProgressSink)` — public hook for custom progress sinks.
+
+### Changed (v0.2-A)
+
+- Exit code `64` now covers configuration errors (flat-mode stem collision, empty input list) in addition to invalid CLI arguments.
+- `errors.json` location: moved from `<output>/<stem>/errors.json` (v0.1 per-document) to `<output>/errors.json` (v0.2-A single batch-level file).
+
 ## [0.1.0] - 2026-04-27
 
 First public release. Document-to-page-image rasterizer covering PDF, Office, and HWP inputs through a single Rust pipeline.
