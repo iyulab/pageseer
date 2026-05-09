@@ -57,7 +57,7 @@ impl FailureStage {
 }
 
 /// 배치 처리 전체 집계 요약.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct BatchSummary {
     /// 처리 대상 문서 수 (dedup 후).
     pub documents_total: u32,
